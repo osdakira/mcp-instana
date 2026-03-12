@@ -5,8 +5,9 @@ This module provides a unified MCP tool that routes website monitoring queries
 to the appropriate specialized tools.
 """
 
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
@@ -66,7 +67,7 @@ class SmartRouterWebsiteMCPTool(BaseInstanaClient):
         self,
         resource_type: str,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
@@ -169,6 +170,16 @@ class SmartRouterWebsiteMCPTool(BaseInstanaClient):
             # Initialize params if not provided
             if params is None:
                 params = {}
+            # Handle case where FastMCP passes params as a JSON string
+            elif isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError as e:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "resource_type": resource_type,
+                        "operation": operation,
+                    }
 
             # Validate resource_type
             if resource_type not in ["analyze", "catalog", "configuration", "advanced_config"]:

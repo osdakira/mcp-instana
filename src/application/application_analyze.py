@@ -172,136 +172,136 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     #         return {"error": f"Failed to get trace details: {e!s}"}
 
 
-    # @register_as_tool(
-    #     title="Get All Traces",
-    #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-    # )
-    # @with_header_auth(ApplicationAnalyzeApi)
-    # async def get_all_traces(
-    #     self,
-    #     payload: Optional[Union[Dict[str, Any], str]]=None,
-    #     api_client = None,
-    #     ctx=None
-    # ) -> Dict[str, Any]:
-    #     """
-    #     Get all traces.
-    #     This tool endpoint retrieves the metrics for traces.
+    @register_as_tool(
+        title="Get All Traces",
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+    )
+    @with_header_auth(ApplicationAnalyzeApi)
+    async def get_all_traces(
+        self,
+        payload: Optional[Union[Dict[str, Any], str]]=None,
+        api_client = None,
+        ctx=None
+    ) -> Dict[str, Any]:
+        """
+        Get all traces.
+        This tool endpoint retrieves the metrics for traces.
 
-    #     Sample payload: {
-    #     "includeInternal": false,
-    #     "includeSynthetic": false,
-    #     "pagination": {
-    #         "retrievalSize": 1
-    #     },
-    #     "tagFilterExpression": {
-    #         "type": "EXPRESSION",
-    #         "logicalOperator": "AND",
-    #         "elements": [
-    #         {
-    #             "type": "TAG_FILTER",
-    #             "name": "endpoint.name",
-    #             "operator": "EQUALS",
-    #             "entity": "DESTINATION",
-    #             "value": "GET /"
-    #         },
-    #         {
-    #             "type": "TAG_FILTER",
-    #             "name": "service.name",
-    #             "operator": "EQUALS",
-    #             "entity": "DESTINATION",
-    #             "value": "groundskeeper"
-    #         }
-    #         ]
-    #     },
-    #     "order": {
-    #         "by": "traceLabel",
-    #         "direction": "DESC"
-    #     }
-    #     }
+        Sample payload: {
+        "includeInternal": false,
+        "includeSynthetic": false,
+        "pagination": {
+            "retrievalSize": 1
+        },
+        "tagFilterExpression": {
+            "type": "EXPRESSION",
+            "logicalOperator": "AND",
+            "elements": [
+            {
+                "type": "TAG_FILTER",
+                "name": "endpoint.name",
+                "operator": "EQUALS",
+                "entity": "DESTINATION",
+                "value": "GET /"
+            },
+            {
+                "type": "TAG_FILTER",
+                "name": "service.name",
+                "operator": "EQUALS",
+                "entity": "DESTINATION",
+                "value": "groundskeeper"
+            }
+            ]
+        },
+        "order": {
+            "by": "traceLabel",
+            "direction": "DESC"
+        }
+        }
 
-    #     Returns:
-    #         Dict[str, Any]: List of traces matching the criteria.
-    #     """
-    #     try:
-    #         # Parse the payload if it's a string
-    #         if isinstance(payload, str):
-    #             logger.debug("Payload is a string, attempting to parse")
-    #             try:
-    #                 import json
-    #                 try:
-    #                     parsed_payload = json.loads(payload)
-    #                     logger.debug("Successfully parsed payload as JSON")
-    #                     request_body = parsed_payload
-    #                 except json.JSONDecodeError as e:
-    #                     logger.debug(f"JSON parsing failed: {e}, trying with quotes replaced")
+        Returns:
+            Dict[str, Any]: List of traces matching the criteria.
+        """
+        try:
+            # Parse the payload if it's a string
+            if isinstance(payload, str):
+                logger.debug("Payload is a string, attempting to parse")
+                try:
+                    import json
+                    try:
+                        parsed_payload = json.loads(payload)
+                        logger.debug("Successfully parsed payload as JSON")
+                        request_body = parsed_payload
+                    except json.JSONDecodeError as e:
+                        logger.debug(f"JSON parsing failed: {e}, trying with quotes replaced")
 
-    #                     # Try replacing single quotes with double quotes
-    #                     fixed_payload = payload.replace("'", "\"")
-    #                     try:
-    #                         parsed_payload = json.loads(fixed_payload)
-    #                         logger.debug("Successfully parsed fixed JSON")
-    #                         request_body = parsed_payload
-    #                     except json.JSONDecodeError:
-    #                         # Try as Python literal
-    #                         import ast
-    #                         try:
-    #                             parsed_payload = ast.literal_eval(payload)
-    #                             logger.debug("Successfully parsed payload as Python literal")
-    #                             request_body = parsed_payload
-    #                         except (SyntaxError, ValueError) as e2:
-    #                             logger.debug(f"Failed to parse payload string: {e2}")
-    #                             return {"error": f"Invalid payload format: {e2}", "payload": payload}
-    #             except Exception as e:
-    #                 logger.debug(f"Error parsing payload string: {e}")
-    #                 return {"error": f"Failed to parse payload: {e}", "payload": payload}
-    #         else:
-    #             # If payload is already a dictionary, use it directly
-    #             logger.debug("Using provided payload dictionary")
-    #             request_body = payload
+                        # Try replacing single quotes with double quotes
+                        fixed_payload = payload.replace("'", "\"")
+                        try:
+                            parsed_payload = json.loads(fixed_payload)
+                            logger.debug("Successfully parsed fixed JSON")
+                            request_body = parsed_payload
+                        except json.JSONDecodeError:
+                            # Try as Python literal
+                            import ast
+                            try:
+                                parsed_payload = ast.literal_eval(payload)
+                                logger.debug("Successfully parsed payload as Python literal")
+                                request_body = parsed_payload
+                            except (SyntaxError, ValueError) as e2:
+                                logger.debug(f"Failed to parse payload string: {e2}")
+                                return {"error": f"Invalid payload format: {e2}", "payload": payload}
+                except Exception as e:
+                    logger.debug(f"Error parsing payload string: {e}")
+                    return {"error": f"Failed to parse payload: {e}", "payload": payload}
+            else:
+                # If payload is already a dictionary, use it directly
+                logger.debug("Using provided payload dictionary")
+                request_body = payload
 
-    #         # Import the GetTraces class
-    #         try:
-    #             from instana_client.models.get_traces import (
-    #                 GetTraces,
-    #             )
-    #             from instana_client.models.group import Group
-    #             logger.debug("Successfully imported GetTraces")
-    #         except ImportError as e:
-    #             logger.debug(f"Error importing GetTraces: {e}")
-    #             return {"error": f"Failed to import GetTraces: {e!s}"}
+            # Import the GetTraces class
+            try:
+                from instana_client.models.get_traces import (
+                    GetTraces,
+                )
+                from instana_client.models.group import Group
+                logger.debug("Successfully imported GetTraces")
+            except ImportError as e:
+                logger.debug(f"Error importing GetTraces: {e}")
+                return {"error": f"Failed to import GetTraces: {e!s}"}
 
-    #         # Create an GetTraces object from the request body
-    #         try:
-    #             query_params = {}
-    #             if request_body and "tag_filter_expression" in request_body:
-    #                 query_params["tag_filter_expression"] = request_body["tag_filter_expression"]
-    #             logger.debug(f"Creating get_traces with params: {query_params}")
-    #             config_object = GetTraces(**query_params)
-    #             logger.debug("Successfully got traces")
-    #         except Exception as e:
-    #             logger.debug(f"Error creating get_traces: {e}")
-    #             return {"error": f"Failed to get tracest: {e!s}"}
+            # Create an GetTraces object from the request body
+            try:
+                query_params = {}
+                if request_body and "tag_filter_expression" in request_body:
+                    query_params["tag_filter_expression"] = request_body["tag_filter_expression"]
+                logger.debug(f"Creating get_traces with params: {query_params}")
+                config_object = GetTraces(**query_params)
+                logger.debug("Successfully got traces")
+            except Exception as e:
+                logger.debug(f"Error creating get_traces: {e}")
+                return {"error": f"Failed to get tracest: {e!s}"}
 
-    #         # Call the get_traces method from the SDK
-    #         logger.debug("Calling get_traces with config object")
-    #         result = api_client.get_traces(
-    #             get_traces=config_object
-    #         )
-    #         # Convert the result to a dictionary
-    #         if hasattr(result, 'to_dict'):
-    #             result_dict = result.to_dict()
-    #         else:
-    #             # If it's already a dict or another format, use it as is
-    #             result_dict = result or {
-    #                 "success": True,
-    #                 "message": "Get traces"
-    #             }
+            # Call the get_traces method from the SDK
+            logger.debug("Calling get_traces with config object")
+            result = api_client.get_traces(
+                get_traces=config_object
+            )
+            # Convert the result to a dictionary
+            if hasattr(result, 'to_dict'):
+                result_dict = result.to_dict()
+            else:
+                # If it's already a dict or another format, use it as is
+                result_dict = result or {
+                    "success": True,
+                    "message": "Get traces"
+                }
 
-    #         logger.debug(f"Result from get_traces: {result_dict}")
-    #         return result_dict
-    #     except Exception as e:
-    #         logger.error(f"Error in get_traces: {e}")
-    #         return {"error": f"Failed to get traces: {e!s}"}
+            logger.debug(f"Result from get_traces: {result_dict}")
+            return result_dict
+        except Exception as e:
+            logger.error(f"Error in get_traces: {e}")
+            return {"error": f"Failed to get traces: {e!s}"}
 
     # @register_as_tool(
     #     title="Get Grouped Trace Metrics",

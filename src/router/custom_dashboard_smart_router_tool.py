@@ -5,8 +5,9 @@ This module provides a unified MCP tool that routes queries to the appropriate
 custom dashboard-specific tools for Instana monitoring.
 """
 
+import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from mcp.types import ToolAnnotations
 
@@ -39,7 +40,7 @@ class CustomDashboardSmartRouterMCPTool(BaseInstanaClient):
     async def manage_custom_dashboards(
         self,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
@@ -78,6 +79,15 @@ class CustomDashboardSmartRouterMCPTool(BaseInstanaClient):
             # Initialize params if not provided
             if params is None:
                 params = {}
+            # Handle case where FastMCP passes params as a JSON string
+            elif isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError as e:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "operation": operation,
+                    }
 
             # Validate operation
             valid_operations = [

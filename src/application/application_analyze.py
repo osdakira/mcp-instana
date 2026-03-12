@@ -4,7 +4,10 @@ Application Analyze MCP Tools Module
 This module provides application analyze tool functionality for Instana monitoring.
 """
 
+import json
 import logging
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
@@ -53,6 +56,35 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         except Exception as e:
             logger.error(f"Error initializing ApplicationAnalyzeApi: {e}", exc_info=True)
             raise
+
+    # CRUD Operations Dispatcher - called by application_smart_router_tool.py
+    async def execute_analyze_operation(
+        self,
+        operation: str,
+        payload: Optional[Union[Dict[str, Any], str]] = None,
+        ctx=None,
+    ) -> Dict[str, Any]:
+        """
+        Execute Application Analyze operations.
+        Called by the smart router tool.
+
+        Args:
+            operation: Operation to perform (get_all_traces)
+            payload: Request payload
+            ctx: MCP context
+
+        Returns:
+            Operation result dictionary
+        """
+        try:
+            if operation == "get_all_traces":
+                return await self.get_all_traces(payload, ctx=ctx)
+            else:
+                return {"error": f"Operation '{operation}' not supported"}
+
+        except Exception as e:
+            logger.error(f"Error executing {operation}: {e}", exc_info=True)
+            return {"error": f"Error executing {operation}: {e!s}"}
 
     # @register_as_tool(
     #     title="Get Call Details",
@@ -172,10 +204,11 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     #         return {"error": f"Failed to get trace details: {e!s}"}
 
 
-    @register_as_tool(
-        title="Get All Traces",
-        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-    )
+    # @register_as_tool decorator commented out - not exposed as MCP tool
+    # @register_as_tool(
+    #     title="Get All Traces",
+    #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+    # )
     @with_header_auth(ApplicationAnalyzeApi)
     async def get_all_traces(
         self,
@@ -184,8 +217,10 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         ctx=None
     ) -> Dict[str, Any]:
         """
-        Get all traces.
-        This tool endpoint retrieves the metrics for traces.
+        Get all traces and save to file.
+
+        Due to large response sizes that exceed token limits, trace data is saved to
+        /tmp/instana_traces_{timestamp}.json and only the file path and summary are returned.
 
         Sample payload: {
         "includeInternal": false,
@@ -220,14 +255,13 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         }
 
         Returns:
-            Dict[str, Any]: List of traces matching the criteria.
+            Dict containing file_path and summary of saved trace data
         """
         try:
             # Parse the payload if it's a string
             if isinstance(payload, str):
                 logger.debug("Payload is a string, attempting to parse")
                 try:
-                    import json
                     try:
                         parsed_payload = json.loads(payload)
                         logger.debug("Successfully parsed payload as JSON")
@@ -291,14 +325,34 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             if hasattr(result, 'to_dict'):
                 result_dict = result.to_dict()
             else:
-                # If it's already a dict or another format, use it as is
-                result_dict = result or {
-                    "success": True,
-                    "message": "Get traces"
-                }
+                result_dict = result or {"success": True, "message": "Get traces"}
 
-            logger.debug(f"Result from get_traces: {result_dict}")
-            return result_dict
+            # Save to file
+            timestamp = int(datetime.now().timestamp())
+            output_path = f"/tmp/instana_traces_{timestamp}.json"
+
+            Path(output_path).write_text(json.dumps(result_dict, indent=2))
+            file_size = Path(output_path).stat().st_size
+
+            # Extract summary
+            total_traces = (
+                len(result_dict.get("items", []))
+                if isinstance(result_dict, dict)
+                else 0
+            )
+
+            logger.info(f"Saved {total_traces} traces to {output_path}")
+
+            return {
+                "file_path": output_path,
+                "summary": {
+                    "total_traces": total_traces,
+                    "file_size_bytes": file_size,
+                    "timestamp": datetime.now().isoformat(),
+                    "message": f"Trace data saved to file due to large size. Total traces: {total_traces}",
+                },
+            }
+
         except Exception as e:
             logger.error(f"Error in get_traces: {e}")
             return {"error": f"Failed to get traces: {e!s}"}
@@ -605,7 +659,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     # #     except Exception as e:
     # #         logger.error(f"Error in get_call_group: {e}")
     # #         return {"error": f"Failed to get grouped call: {e!s}"}
-
 
     # @register_as_tool(
     #     title="Get Correlated Traces",

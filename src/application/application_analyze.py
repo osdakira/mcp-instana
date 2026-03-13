@@ -141,69 +141,69 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     #         logger.error(f"Error getting call details: {e}", exc_info=True)
     #         return {"error": f"Failed to get call details: {e!s}"}
 
-    # @register_as_tool(
-    #     title="Get Trace Details",
-    #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-    # )
-    # @with_header_auth(ApplicationAnalyzeApi)
-    # async def get_trace_details(
-    #     self,
-    #     id: str,
-    #     retrievalSize: Optional[int] = None,
-    #     offset: Optional[int] = None,
-    #     ingestionTime: Optional[int] = None,
-    #     ctx=None,
-    #     api_client=None
-    # ) -> Dict[str, Any]:
-    #     """
-    #     Get details of a specific trace.
-    #     This tool is to retrive comprehensive details of a particular trace.
-    #     Args:
-    #         id (str): The ID of the trace.
-    #         retrievalSize (Optional[int]):The number of records to retrieve in a single request.
-    #                                     Minimum value is 1 and maximum value is 10000.
-    #         offset (Optional[int]): The number of records to be skipped from the ingestionTime.
-    #         ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
-    #         ctx: Optional context for the request.
-    #     Returns:
-    #         Dict[str, Any]: Details of the specified trace.
-    #     """
+    @register_as_tool(
+        title="Get Trace Details",
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+    )
+    @with_header_auth(ApplicationAnalyzeApi)
+    async def get_trace_details(
+        self,
+        id: str,
+        retrievalSize: Optional[int] = None,
+        offset: Optional[int] = None,
+        ingestionTime: Optional[int] = None,
+        ctx=None,
+        api_client=None
+    ) -> Dict[str, Any]:
+        """
+        Get details of a specific trace.
+        This tool is to retrive comprehensive details of a particular trace.
+        Args:
+            id (str): The ID of the trace.
+            retrievalSize (Optional[int]):The number of records to retrieve in a single request.
+                                        Minimum value is 1 and maximum value is 10000.
+            offset (Optional[int]): The number of records to be skipped from the ingestionTime.
+            ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
+            ctx: Optional context for the request.
+        Returns:
+            Dict[str, Any]: Details of the specified trace.
+        """
 
-    #     try:
-    #         if not id:
-    #             logger.warning("Trace ID must be provided")
-    #             return {"error": "Trace ID must be provided"}
+        try:
+            if not id:
+                logger.warning("Trace ID must be provided")
+                return {"error": "Trace ID must be provided"}
 
-    #         if offset is not None and ingestionTime is None:
-    #             logger.warning("If offset is provided, ingestionTime must also be provided")
-    #             return {"error": "If offset is provided, ingestionTime must also be provided"}
+            if offset is not None and ingestionTime is None:
+                logger.warning("If offset is provided, ingestionTime must also be provided")
+                return {"error": "If offset is provided, ingestionTime must also be provided"}
 
-    #         if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
-    #             logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
-    #             return {"error": "retrievalSize must be between 1 and 10000"}
+            if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
+                logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
+                return {"error": "retrievalSize must be between 1 and 10000"}
 
-    #         logger.debug(f"Fetching trace details for id={id}")
-    #         result = api_client.get_trace_download(
-    #             id=id,
-    #             retrieval_size=retrievalSize,
-    #             offset=offset,
-    #             ingestion_time=ingestionTime
-    #         )
+            logger.debug(f"Fetching trace details for id={id}")
+            result = api_client.get_trace_download(
+                id=id,
+                retrieval_size=retrievalSize,
+                offset=offset,
+                ingestion_time=ingestionTime
+            )
 
-    #         # Convert the result to a dictionary
-    #         if hasattr(result, 'to_dict'):
-    #             result_dict = result.to_dict()
-    #         else:
-    #             # If it's already a dict or another format, use it as is
-    #             result_dict = result
+            # Convert the result to a dictionary
+            if hasattr(result, 'to_dict'):
+                result_dict = result.to_dict()
+            else:
+                # If it's already a dict or another format, use it as is
+                result_dict = result
 
-    #         logger.debug(f"Result from get_trace_details: {result_dict}")
-    #         # Ensure we return a dictionary
-    #         return dict(result_dict) if not isinstance(result_dict, dict) else result_dict
+            logger.debug(f"Result from get_trace_details: {result_dict}")
+            # Ensure we return a dictionary
+            return dict(result_dict) if not isinstance(result_dict, dict) else result_dict
 
-    #     except Exception as e:
-    #         logger.error(f"Error getting trace details: {e}", exc_info=True)
-    #         return {"error": f"Failed to get trace details: {e!s}"}
+        except Exception as e:
+            logger.error(f"Error getting trace details: {e}", exc_info=True)
+            return {"error": f"Failed to get trace details: {e!s}"}
 
 
     # @register_as_tool decorator commented out - not exposed as MCP tool

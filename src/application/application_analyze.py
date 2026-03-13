@@ -5,6 +5,8 @@ This module provides application analyze tool functionality for Instana monitori
 """
 
 import logging
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
@@ -184,8 +186,10 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         ctx=None
     ) -> Dict[str, Any]:
         """
-        Get all traces.
-        This tool endpoint retrieves the metrics for traces.
+        Get all traces and save to file.
+
+        Due to large response sizes that exceed token limits, trace data is saved to
+        /tmp/instana_traces_{timestamp}.json and only the file path and summary are returned.
 
         Sample payload: {
         "includeInternal": false,
@@ -220,7 +224,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         }
 
         Returns:
-            Dict[str, Any]: List of traces matching the criteria.
+            Dict containing file_path and summary of saved trace data
         """
         try:
             # Parse the payload if it's a string
@@ -288,14 +292,24 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             if hasattr(result, 'to_dict'):
                 result_dict = result.to_dict()
             else:
-                # If it's already a dict or another format, use it as is
-                result_dict = result or {
-                    "success": True,
-                    "message": "Get traces"
-                }
+                result_dict = result or {"success": True, "message": "Get traces"}
 
-            logger.debug(f"Result from get_traces: {result_dict}")
-            return result_dict
+            # Save to file
+            timestamp = int(datetime.now().timestamp())
+            output_path = f"/tmp/instana_traces_{timestamp}.json"
+
+            Path(output_path).write_text(json.dumps(result_dict, indent=2))
+            file_size = Path(output_path).stat().st_size
+            total_traces = (len(result_dict.get("items", [])) if isinstance(result_dict, dict) else 0)
+
+            return {
+                "file_path": output_path,
+                "summary": {
+                    "total_traces": total_traces,
+                    "file_size_bytes": file_size,
+                },
+            }
+
         except Exception as e:
             logger.error(f"Error in get_traces: {e}")
             return {"error": f"Failed to get traces: {e!s}"}

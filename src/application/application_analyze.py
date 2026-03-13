@@ -31,6 +31,10 @@ except ImportError:
 from src.core.utils import BaseInstanaClient, register_as_tool, with_header_auth
 
 # Configure logger for this module
+# Constants for pagination limits
+MAX_SIZE_BYTES = 2 * 1024 * 1024  # 2MB
+MAX_PAGES = 100
+
 logger = logging.getLogger(__name__)
 
 class ApplicationAnalyzeMCPTools(BaseInstanaClient):
@@ -291,80 +295,176 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             else:
                 # If payload is already a dictionary, use it directly
                 logger.debug("Using provided payload dictionary")
-                request_body = payload
+                request_body = payload if payload is not None else {}
 
-            # Import the GetTraces class
-            try:
-                from instana_client.models.get_traces import (
-                    GetTraces,
-                )
-                from instana_client.models.group import Group
-                logger.debug("Successfully imported GetTraces")
-            except ImportError as e:
-                logger.debug(f"Error importing GetTraces: {e}")
-                return {"error": f"Failed to import GetTraces: {e!s}"}
-
-            # Create an GetTraces object from the request body
-            try:
-                logger.debug(f"Creating get_traces with params: {request_body}")
-                config_object = GetTraces.from_dict(request_body)
-                logger.debug("Successfully got traces")
-            except Exception as e:
-                logger.debug(f"Error creating get_traces: {e}")
-                return {"error": f"Failed to get tracest: {e!s}"}
-
-            # Call the get_traces method from the SDK
-            logger.debug("Calling get_traces with config object")
-            result = api_client.get_traces(
-                get_traces=config_object
-            )
-            # Convert the result to a dictionary
-            if hasattr(result, 'to_dict'):
-                result_dict = result.to_dict()
-            else:
-                result_dict = result or {"success": True, "message": "Get traces"}
-
-            # Save to file
+            # Prepare output file
             timestamp = int(datetime.now().timestamp())
             output_path = f"/tmp/instana_traces_{timestamp}.jsonl"
 
-            # Write each item as a separate line in JSONL format
-            items = result_dict.get("items", [])
-            with open(output_path, 'w') as f:
-                for item in items:
-                    f.write(json.dumps(item) + '\n')
-
-            file_size = Path(output_path).stat().st_size
-
-            # Extract summary
-            total_traces = (
-                len(result_dict.get("items", []))
-                if isinstance(result_dict, dict)
-                else 0
-            )
-
-            logger.info(f"Saved {total_traces} traces to {output_path}")
+            # Collect all traces with pagination
+            try:
+                result = self._collect_all_traces(api_client, request_body, output_path)
+            except Exception as e:
+                return {"error": f"Failed to collect traces: {e!s}"}
 
             return {
                 "file_path": output_path,
                 "summary": {
-                    "total_traces": total_traces,
-                    "file_size_bytes": file_size,
+                    "total_traces": result["total_traces"],
+                    "file_size_bytes": result["file_size_bytes"],
+                    "pages_fetched": result["pages_fetched"],
                     "timestamp": datetime.now().isoformat(),
-                    "message": f"Trace data saved to file due to large size. Total traces: {total_traces}",
+                    "message": f"Trace data saved to file. Total traces: {result['total_traces']} across {result['pages_fetched']} page(s)",
                 },
                 "metadata": {
-                    "can_load_more": result_dict.get("canLoadMore", False),
-                    "total_hits": result_dict.get("totalHits", 0),
-                    "total_represented_item_count": result_dict.get("totalRepresentedItemCount", 0),
-                    "total_retained_item_count": result_dict.get("totalRetainedItemCount", 0),
-                    "adjusted_timeframe": result_dict.get("adjustedTimeframe", {}),
+                    "stop_reason": result["stop_reason"],
+                    "can_load_more": result["stop_reason"] != "completed",
+                    "size_limit_reached": result["stop_reason"] == "size_limit",
+                    "page_limit_reached": result["stop_reason"] == "page_limit",
+                    "last_ingestion_time": result["last_ingestion_time"],
                 },
             }
 
         except Exception as e:
             logger.error(f"Error in get_traces: {e}")
             return {"error": f"Failed to get traces: {e!s}"}
+
+    def _collect_all_traces(
+        self,
+        api_client,
+        request_body: Dict[str, Any],
+        output_path: str
+    ) -> Dict[str, Any]:
+        """Collect all traces with pagination."""
+        accumulated_size = 0
+        total_traces = 0
+        pages_fetched = 0
+        can_load_more = True
+        stop_reason = "completed"
+        last_ingestion_time = None
+        last_offset = None
+
+        logger.info(f"Starting pagination: max_size={MAX_SIZE_BYTES} bytes, max_pages={MAX_PAGES}")
+
+        while can_load_more and pages_fetched < MAX_PAGES and accumulated_size < MAX_SIZE_BYTES:
+            pages_fetched += 1
+
+            # Fetch page
+            try:
+                result_dict = self._fetch_traces_page(
+                    api_client, request_body, pages_fetched, last_ingestion_time, last_offset
+                )
+            except Exception as e:
+                logger.error(f"Error on page {pages_fetched}: {e}")
+                if Path(output_path).exists():
+                    Path(output_path).unlink()
+                    logger.debug(f"Deleted partial file: {output_path}")
+                raise
+
+            # Extract items
+            items = result_dict.get("items", [])
+            if not items:
+                logger.info(f"Page {pages_fetched}: No items, stopping")
+                can_load_more = False
+                break
+
+            # Write to file first
+            self._write_traces_to_file(output_path, items, pages_fetched)
+
+            # Check size limit after writing
+            page_size = len(json.dumps(items).encode('utf-8'))
+            accumulated_size += page_size
+
+            if accumulated_size > MAX_SIZE_BYTES:
+                logger.warning(
+                    f"Page {pages_fetched}: Size limit exceeded "
+                    f"(accumulated: {accumulated_size}, limit: {MAX_SIZE_BYTES})"
+                )
+                stop_reason = "size_limit"
+                break
+
+            # Update state
+            total_traces += len(items)
+            # Use the cursor from the last item for pagination
+            if items and "cursor" in items[-1]:
+                cursor = items[-1]["cursor"]
+                if isinstance(cursor, dict):
+                    if "ingestionTime" in cursor:
+                        last_ingestion_time = cursor["ingestionTime"]
+                    if "offset" in cursor:
+                        last_offset = cursor["offset"]
+            can_load_more = result_dict.get("canLoadMore", False)
+
+            logger.info(
+                f"Page {pages_fetched}: {len(items)} traces, "
+                f"{page_size} bytes, total={total_traces}, canLoadMore={can_load_more}"
+            )
+
+            # Check page limit
+            if pages_fetched >= MAX_PAGES and can_load_more:
+                logger.warning(f"Page limit reached ({MAX_PAGES})")
+                stop_reason = "page_limit"
+                break
+
+        file_size = Path(output_path).stat().st_size if Path(output_path).exists() else 0
+        logger.info(
+            f"Pagination complete: pages={pages_fetched}, traces={total_traces}, "
+            f"size={file_size} bytes, stop_reason={stop_reason}"
+        )
+
+        return {
+            "total_traces": total_traces,
+            "file_size_bytes": file_size,
+            "pages_fetched": pages_fetched,
+            "stop_reason": stop_reason,
+            "last_ingestion_time": last_ingestion_time,
+        }
+
+    def _fetch_traces_page(
+        self,
+        api_client,
+        request_body: Dict[str, Any],
+        pages_fetched: int,
+        last_ingestion_time: Optional[int],
+        last_offset: Optional[int]
+    ) -> Dict[str, Any]:
+        """Fetch a single page of traces."""
+        # Update pagination for subsequent pages
+        if pages_fetched > 1 and last_ingestion_time is not None and last_offset is not None:
+            if "pagination" not in request_body:
+                request_body["pagination"] = {}
+            request_body["pagination"]["ingestionTime"] = last_ingestion_time
+            request_body["pagination"]["offset"] = last_offset
+            logger.debug(f"Page {pages_fetched}: offset={last_offset}, ingestionTime={last_ingestion_time}")
+        else:
+            logger.debug(f"Page {pages_fetched}: initial request")
+
+        # Call API
+        logger.debug(f"Calling get_traces for page {pages_fetched}")
+        config_object = GetTraces.from_dict(request_body)
+        result = api_client.get_traces(get_traces=config_object)
+
+        # Convert result
+        if hasattr(result, 'to_dict'):
+            return result.to_dict()
+        return result or {}
+
+    def _write_traces_to_file(
+        self,
+        output_path: str,
+        items: List[Dict[str, Any]],
+        pages_fetched: int
+    ) -> None:
+        """Write traces to JSONL file.
+
+        Each item contains both trace data and cursor for pagination:
+        {"trace": {...}, "cursor": {...}}
+        """
+        file_mode = 'w' if pages_fetched == 1 else 'a'
+        with open(output_path, file_mode) as f:
+            for item in items:
+                f.write(json.dumps(item) + '\n')
+
 
     # @register_as_tool(
     #     title="Get Grouped Trace Metrics",

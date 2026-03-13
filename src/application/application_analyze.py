@@ -306,11 +306,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Create an GetTraces object from the request body
             try:
-                query_params = {}
-                if request_body and "tag_filter_expression" in request_body:
-                    query_params["tag_filter_expression"] = request_body["tag_filter_expression"]
-                logger.debug(f"Creating get_traces with params: {query_params}")
-                config_object = GetTraces(**query_params)
+                logger.debug(f"Creating get_traces with params: {request_body}")
+                config_object = GetTraces.from_dict(request_body)
                 logger.debug("Successfully got traces")
             except Exception as e:
                 logger.debug(f"Error creating get_traces: {e}")

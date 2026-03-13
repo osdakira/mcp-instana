@@ -329,9 +329,14 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Save to file
             timestamp = int(datetime.now().timestamp())
-            output_path = f"/tmp/instana_traces_{timestamp}.json"
+            output_path = f"/tmp/instana_traces_{timestamp}.jsonl"
 
-            Path(output_path).write_text(json.dumps(result_dict, indent=2))
+            # Write each item as a separate line in JSONL format
+            items = result_dict.get("items", [])
+            with open(output_path, 'w') as f:
+                for item in items:
+                    f.write(json.dumps(item) + '\n')
+
             file_size = Path(output_path).stat().st_size
 
             # Extract summary
@@ -350,6 +355,13 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                     "file_size_bytes": file_size,
                     "timestamp": datetime.now().isoformat(),
                     "message": f"Trace data saved to file due to large size. Total traces: {total_traces}",
+                },
+                "metadata": {
+                    "can_load_more": result_dict.get("canLoadMore", False),
+                    "total_hits": result_dict.get("totalHits", 0),
+                    "total_represented_item_count": result_dict.get("totalRepresentedItemCount", 0),
+                    "total_retained_item_count": result_dict.get("totalRetainedItemCount", 0),
+                    "adjusted_timeframe": result_dict.get("adjustedTimeframe", {}),
                 },
             }
 

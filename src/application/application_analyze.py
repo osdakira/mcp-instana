@@ -303,7 +303,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Collect all traces with pagination
             try:
-                result = self._collect_all_traces(api_client, request_body, output_path)
+                result = self._collect_all_traces(request_body, output_path)
             except Exception as e:
                 return {"error": f"Failed to collect traces: {e!s}"}
 
@@ -331,7 +331,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
     def _collect_all_traces(
         self,
-        api_client,
         request_body: Dict[str, Any],
         output_path: str
     ) -> Dict[str, Any]:
@@ -352,7 +351,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             # Fetch page
             try:
                 result_dict = self._fetch_traces_page(
-                    api_client, request_body, pages_fetched, last_ingestion_time, last_offset
+                    request_body, pages_fetched, last_ingestion_time, last_offset
                 )
             except Exception as e:
                 logger.error(f"Error on page {pages_fetched}: {e}")
@@ -422,7 +421,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
     def _fetch_traces_page(
         self,
-        api_client,
         request_body: Dict[str, Any],
         pages_fetched: int,
         last_ingestion_time: Optional[int],
@@ -442,7 +440,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         # Call API
         logger.debug(f"Calling get_traces for page {pages_fetched}")
         config_object = GetTraces.from_dict(request_body)
-        result = api_client.get_traces(get_traces=config_object)
+        result = self.analyze_api.get_traces(get_traces=config_object)
 
         # Convert result
         if hasattr(result, 'to_dict'):

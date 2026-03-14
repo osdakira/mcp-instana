@@ -27,6 +27,7 @@ class SmartRouterMCPTool(BaseInstanaClient):
 
         # Initialize the application tool clients
         from src.application.application_alert_config import ApplicationAlertMCPTools
+        from src.application.application_analyze import ApplicationAnalyzeMCPTools
         from src.application.application_call_group import ApplicationCallGroupMCPTools
         from src.application.application_catalog import ApplicationCatalogMCPTools
         from src.application.application_global_alert_config import (
@@ -41,6 +42,7 @@ class SmartRouterMCPTool(BaseInstanaClient):
         self.app_resources_client = ApplicationResourcesMCPTools(read_token, base_url)
         self.app_settings_client = ApplicationSettingsMCPTools(read_token, base_url)
         self.app_catalog_client = ApplicationCatalogMCPTools(read_token, base_url)
+        self.app_analyze_client = ApplicationAnalyzeMCPTools(read_token, base_url)
 
         logger.info("Smart Router initialized with Application tools")
 
@@ -64,6 +66,7 @@ class SmartRouterMCPTool(BaseInstanaClient):
         - "global_alert_config": Manage global application alert configurations
         - "settings": Manage application perspectives, endpoints, services, manual services
         - "catalog": Access application tag and metric catalog information
+        - "analyze": Analyze application traces and calls
 
         METRICS (resource_type="metrics"):
             operation: "application"
@@ -115,8 +118,50 @@ class SmartRouterMCPTool(BaseInstanaClient):
             Get tag catalog: operation="get_tag_catalog", params={"use_case": "GROUPING", "data_source": "CALLS"}
             Get metric catalog: operation="get_metric_catalog"
 
+        ANALYZE (resource_type="analyze"):
+            operations: get_all_traces
+            params: {payload, max_retrieval_size}
+
+            Get all traces: operation="get_all_traces", params={"payload": {...}, "max_retrieval_size": 200}
+
+            Sample payload for get_all_traces:
+            {
+                "includeInternal": false,
+                "includeSynthetic": false,
+                "pagination": {
+                    "retrievalSize": 1
+                },
+                "tagFilterExpression": {
+                    "type": "EXPRESSION",
+                    "logicalOperator": "AND",
+                    "elements": [
+                        {
+                            "type": "TAG_FILTER",
+                            "name": "endpoint.name",
+                            "operator": "EQUALS",
+                            "entity": "DESTINATION",
+                            "value": "GET /"
+                        },
+                        {
+                            "type": "TAG_FILTER",
+                            "name": "service.name",
+                            "operator": "EQUALS",
+                            "entity": "DESTINATION",
+                            "value": "groundskeeper"
+                        }
+                    ]
+                },
+                "order": {
+                    "by": "traceLabel",
+                    "direction": "DESC"
+                }
+            }
+
+            Note: Due to large response sizes, trace data is saved to /tmp/instana_traces_{timestamp}.json
+            and only the file path and summary are returned.
+
         Args:
-            resource_type: "metrics", "alert_config", "global_alert_config", "settings", or "catalog"
+            resource_type: "metrics", "alert_config", "global_alert_config", "settings", "catalog", or "analyze"
             operation: Specific operation for the resource type
             params: Operation-specific parameters (optional)
             ctx: MCP context (internal)
@@ -154,10 +199,17 @@ class SmartRouterMCPTool(BaseInstanaClient):
                 params = {}
 
             # Validate resource_type
-            if resource_type not in ["metrics", "alert_config", "global_alert_config", "settings", "catalog"]:
+            if resource_type not in [
+                "metrics",
+                "alert_config",
+                "global_alert_config",
+                "settings",
+                "catalog",
+                "analyze",
+            ]:
                 return {
-                    "error": f"Invalid resource_type '{resource_type}'. Must be 'metrics', 'alert_config', 'global_alert_config', 'settings', or 'catalog'",
-                    "suggestion": "Choose 'metrics' for querying data, 'alert_config' for application-specific alerts, 'global_alert_config' for global alerts, 'settings' for application perspective configurations, or 'catalog' for tag and metric catalog information"
+                    "error": f"Invalid resource_type '{resource_type}'. Must be 'metrics', 'alert_config', 'global_alert_config', 'settings', 'catalog', or 'analyze'",
+                    "suggestion": "Choose 'metrics' for querying data, 'alert_config' for application-specific alerts, 'global_alert_config' for global alerts, 'settings' for application perspective configurations, 'catalog' for tag and metric catalog information, or 'analyze' for trace analysis",
                 }
 
             # Route to the appropriate resource handler
@@ -171,10 +223,19 @@ class SmartRouterMCPTool(BaseInstanaClient):
                 return await self._handle_settings(operation, params, ctx)
             elif resource_type == "catalog":
                 return await self._handle_catalog(operation, params, ctx)
+            elif resource_type == "analyze":
+                return await self._handle_analyze(operation, params, ctx)
             else:
                 return {
                     "error": f"Unsupported resource_type: {resource_type}",
-                    "supported_types": ["metrics", "alert_config", "global_alert_config", "settings", "catalog"]
+                    "supported_types": [
+                        "metrics",
+                        "alert_config",
+                        "global_alert_config",
+                        "settings",
+                        "catalog",
+                        "analyze",
+                    ],
                 }
 
         except Exception as e:
@@ -519,6 +580,29 @@ class SmartRouterMCPTool(BaseInstanaClient):
             logger.error(f"Error fetching application ID: {e}", exc_info=True)
             return {"error": f"Failed to fetch application ID: {e!s}"}
 
+    async def _handle_analyze(
+        self, operation: str, params: Dict[str, Any], ctx
+    ) -> Dict[str, Any]:
+        """Handle Application Analyze operations."""
+        valid_operations = ["get_all_traces"]
+
+        if operation not in valid_operations:
+            return {
+                "error": f"Invalid operation '{operation}' for analyze",
+                "valid_operations": valid_operations,
+            }
+
+        # Route to the analyze client with params
+        result = await self.app_analyze_client.execute_analyze_operation(
+            operation=operation, params=params, ctx=ctx
+        )
+
+        return {
+            "resource_type": "analyze",
+            "operation": operation,
+            "results": result,
+        }
+
     async def _handle_catalog(
         self,
         operation: str,
@@ -571,4 +655,3 @@ class SmartRouterMCPTool(BaseInstanaClient):
             "error": f"Unsupported catalog operation: {operation}",
             "valid_operations": valid_operations
         }
-

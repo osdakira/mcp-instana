@@ -57,6 +57,37 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             logger.error(f"Error initializing ApplicationAnalyzeApi: {e}", exc_info=True)
             raise
 
+    # CRUD Operations Dispatcher - called by application_smart_router_tool.py
+    async def execute_analyze_operation(
+        self,
+        operation: str,
+        params: Optional[Union[Dict[str, Any], str]] = None,
+        ctx=None,
+    ) -> Dict[str, Any]:
+        """
+        Execute Application Analyze operations.
+        Called by the smart router tool.
+
+        Args:
+            operation: Operation to perform (get_all_traces)
+            params: Dictionary containing 'payload' and optionally 'max_retrieval_size'
+            ctx: MCP context
+
+        Returns:
+            Operation result dictionary
+        """
+        try:
+            if operation == "get_all_traces":
+                payload = params.get('payload')
+                max_retrieval_size = params.get('max_retrieval_size', 200)
+                return await self.get_all_traces(payload, max_retrieval_size=max_retrieval_size, ctx=ctx)
+            else:
+                return {"error": f"Operation '{operation}' not supported"}
+
+        except Exception as e:
+            logger.error(f"Error executing {operation}: {e}", exc_info=True)
+            return {"error": f"Error executing {operation}: {e!s}"}
+
     # @register_as_tool(
     #     title="Get Call Details",
     #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
@@ -175,10 +206,11 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     #         return {"error": f"Failed to get trace details: {e!s}"}
 
 
-    @register_as_tool(
-        title="Get All Traces",
-        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-    )
+    # @register_as_tool decorator commented out - not exposed as MCP tool
+    # @register_as_tool(
+    #     title="Get All Traces",
+    #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+    # )
     @with_header_auth(ApplicationAnalyzeApi)
     async def get_all_traces(
         self,

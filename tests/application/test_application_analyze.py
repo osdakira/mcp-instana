@@ -285,6 +285,112 @@ class TestApplicationAnalyzeMCPTools(unittest.TestCase):
         call_args = self.mock_paginate.call_args
         self.assertEqual(call_args.kwargs["max_retrieval_size"], 200)
 
+    def test_get_trace_details_success(self):
+        """Test successful get_trace_details with pagination"""
+        # Mock paginate_and_collect result
+        mock_pager_result = MagicMock()
+        mock_pager_result.file_path = "/tmp/instana_trace_details_trace123_123456.jsonl"
+        mock_pager_result.item_count = 10
+        mock_pager_result.file_size_bytes = 4096
+        mock_pager_result.stop_reason = "all_fetched"
+
+        self.mock_paginate.return_value = mock_pager_result
+
+        # Run the test
+        result = asyncio.run(
+            self.tools.get_trace_details(
+                id="trace123",
+                retrievalSize=100,
+                max_retrieval_size=200
+            )
+        )
+
+        # Verify results
+        self.assertIn("file_path", result)
+        self.assertIn("item_count", result)
+        self.assertIn("file_size_bytes", result)
+        self.assertIn("stop_reason", result)
+        self.assertEqual(result["item_count"], 10)
+        self.assertEqual(result["stop_reason"], "all_fetched")
+        self.assertIn("/tmp/instana_trace_details_trace123_", result["file_path"])
+
+        # Verify paginate_and_collect was called
+        self.mock_paginate.assert_called_once()
+
+    def test_get_trace_details_missing_id(self):
+        """Test get_trace_details with missing trace ID"""
+        result = asyncio.run(self.tools.get_trace_details(id=""))
+
+        self.assertIn("error", result)
+        self.assertIn("Trace ID must be provided", result["error"])
+
+    def test_get_trace_details_invalid_retrieval_size(self):
+        """Test get_trace_details with invalid retrievalSize"""
+        result = asyncio.run(
+            self.tools.get_trace_details(id="trace123", retrievalSize=20000)
+        )
+
+        self.assertIn("error", result)
+        self.assertIn("retrievalSize must be between 1 and 10000", result["error"])
+
+    def test_get_trace_details_with_custom_max_retrieval_size(self):
+        """Test get_trace_details passes max_retrieval_size to paginate_and_collect"""
+        # Mock paginate_and_collect result
+        mock_pager_result = MagicMock()
+        mock_pager_result.file_path = "/tmp/instana_trace_details_trace123_123456.jsonl"
+        mock_pager_result.item_count = 500
+        mock_pager_result.file_size_bytes = 20480
+        mock_pager_result.stop_reason = "limit_reached"
+
+        self.mock_paginate.return_value = mock_pager_result
+
+        # Run the test with max_retrieval_size=500
+        result = asyncio.run(
+            self.tools.get_trace_details(
+                id="trace123",
+                retrievalSize=100,
+                max_retrieval_size=500
+            )
+        )
+
+        # Verify results
+        self.assertEqual(result["item_count"], 500)
+        self.assertEqual(result["stop_reason"], "limit_reached")
+        self.assertIn("/tmp/instana_trace_details_trace123_", result["file_path"])
+
+        # Verify max_retrieval_size was passed to paginate_and_collect
+        call_args = self.mock_paginate.call_args
+        self.assertEqual(call_args.kwargs["max_retrieval_size"], 500)
+
+    def test_get_trace_details_error_handling(self):
+        """Test get_trace_details error handling"""
+        # Mock paginate_and_collect to raise an exception
+        self.mock_paginate.side_effect = Exception("API error")
+
+        result = asyncio.run(
+            self.tools.get_trace_details(id="trace123", max_retrieval_size=100)
+        )
+
+        self.assertIn("error", result)
+        self.assertIn("Failed to get trace details", result["error"])
+
+    def test_get_trace_details_default_max_retrieval_size(self):
+        """Test get_trace_details uses default max_retrieval_size=200"""
+        # Mock paginate_and_collect result
+        mock_pager_result = MagicMock()
+        mock_pager_result.file_path = "/tmp/instana_trace_details_trace123_123456.jsonl"
+        mock_pager_result.item_count = 150
+        mock_pager_result.file_size_bytes = 8192
+        mock_pager_result.stop_reason = "all_fetched"
+
+        self.mock_paginate.return_value = mock_pager_result
+
+        # Run without specifying max_retrieval_size
+        result = asyncio.run(self.tools.get_trace_details(id="trace123"))
+
+        # Verify default max_retrieval_size=200 was used
+        call_args = self.mock_paginate.call_args
+        self.assertEqual(call_args.kwargs["max_retrieval_size"], 200)
 
 if __name__ == "__main__":
     unittest.main()

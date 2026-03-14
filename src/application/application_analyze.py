@@ -150,56 +150,74 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         self,
         id: str,
         retrievalSize: Optional[int] = None,
-        offset: Optional[int] = None,
-        ingestionTime: Optional[int] = None,
+        max_retrieval_size: int = 200,
         ctx=None,
         api_client=None
     ) -> Dict[str, Any]:
         """
-        Get details of a specific trace.
-        This tool is to retrive comprehensive details of a particular trace.
+        Get details of a specific trace with pagination support.
+
+        Due to large response sizes, trace detail data is saved to
+        /tmp/instana_trace_details_{trace_id}_{timestamp}.jsonl
+        and only the file path and summary are returned.
+
         Args:
             id (str): The ID of the trace.
-            retrievalSize (Optional[int]):The number of records to retrieve in a single request.
-                                        Minimum value is 1 and maximum value is 10000.
-            offset (Optional[int]): The number of records to be skipped from the ingestionTime.
-            ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
+            retrievalSize (Optional[int]): The number of records to retrieve in a single request.
+                                          Minimum value is 1 and maximum value is 10000.
+            max_retrieval_size (int): Maximum number of items to collect (default: 200)
             ctx: Optional context for the request.
-        Returns:
-            Dict[str, Any]: Details of the specified trace.
-        """
+            api_client: API client instance
 
+        Returns:
+            Dict containing file_path, item_count, file_size_bytes, and stop_reason
+        """
         try:
             if not id:
                 logger.warning("Trace ID must be provided")
                 return {"error": "Trace ID must be provided"}
 
-            if offset is not None and ingestionTime is None:
-                logger.warning("If offset is provided, ingestionTime must also be provided")
-                return {"error": "If offset is provided, ingestionTime must also be provided"}
-
             if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
                 logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
                 return {"error": "retrievalSize must be between 1 and 10000"}
 
-            logger.debug(f"Fetching trace details for id={id}")
-            result = api_client.get_trace_download(
-                id=id,
-                retrieval_size=retrievalSize,
-                offset=offset,
-                ingestion_time=ingestionTime
+            # Prepare output path
+            timestamp = int(datetime.now().timestamp())
+            output_path = f"/tmp/instana_trace_details_{id}_{timestamp}.jsonl"
+
+            # Define fetcher function
+            def fetch_page(cursor: Optional[Any]) -> Dict[str, Any]:
+                # Apply cursor for subsequent pages
+                if cursor and isinstance(cursor, dict):
+                    ingestion_time = cursor.get("ingestionTime")
+                    offset = cursor.get("offset")
+                    result = api_client.get_trace_download(
+                        id=id,
+                        retrieval_size=retrievalSize,
+                        offset=offset,
+                        ingestion_time=ingestion_time
+                    )
+                else:
+                    result = api_client.get_trace_download(
+                        id=id,
+                        retrieval_size=retrievalSize
+                    )
+
+                return result.to_dict() if hasattr(result, 'to_dict') else result
+
+            # Execute pagination
+            result = paginate_and_collect(
+                fetcher=fetch_page,
+                output_path=output_path,
+                max_retrieval_size=max_retrieval_size
             )
 
-            # Convert the result to a dictionary
-            if hasattr(result, 'to_dict'):
-                result_dict = result.to_dict()
-            else:
-                # If it's already a dict or another format, use it as is
-                result_dict = result
-
-            logger.debug(f"Result from get_trace_details: {result_dict}")
-            # Ensure we return a dictionary
-            return dict(result_dict) if not isinstance(result_dict, dict) else result_dict
+            return {
+                "file_path": result.file_path,
+                "item_count": result.item_count,
+                "file_size_bytes": result.file_size_bytes,
+                "stop_reason": result.stop_reason,
+            }
 
         except Exception as e:
             logger.error(f"Error getting trace details: {e}", exc_info=True)

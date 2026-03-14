@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
+from src.application.application_utils import paginate_and_collect
 from src.prompts import mcp
 
 # Import the necessary classes from the SDK
@@ -182,14 +183,21 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     async def get_all_traces(
         self,
         payload: Optional[Union[Dict[str, Any], str]]=None,
+        max_retrieval_size: int = 200,
         api_client = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
-        Get all traces and save to file.
+        Get all traces with pagination support and save to file.
 
-        Due to large response sizes that exceed token limits, trace data is saved to
-        /tmp/instana_traces_{timestamp}.json and only the file path and summary are returned.
+        Due to large response sizes, trace data is saved to /tmp/instana_traces_{timestamp}.jsonl
+        and only the file path and summary are returned.
+
+        Args:
+            payload: Request payload for GetTraces API
+            max_retrieval_size: Maximum number of items to collect (default: 200)
+            api_client: API client instance
+            ctx: MCP context
 
         Sample payload: {
         "includeInternal": false,
@@ -223,8 +231,9 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         }
         }
 
+
         Returns:
-            Dict containing file_path and summary of saved trace data
+            Dict containing file_path, item_count, file_size_bytes, and stop_reason
         """
         try:
             # Parse the payload if it's a string
@@ -232,94 +241,53 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                 logger.debug("Payload is a string, attempting to parse")
                 try:
                     import json
+                    request_body = json.loads(payload)
+                except json.JSONDecodeError:
                     try:
-                        parsed_payload = json.loads(payload)
-                        logger.debug("Successfully parsed payload as JSON")
-                        request_body = parsed_payload
-                    except json.JSONDecodeError as e:
-                        logger.debug(f"JSON parsing failed: {e}, trying with quotes replaced")
-
-                        # Try replacing single quotes with double quotes
-                        fixed_payload = payload.replace("'", "\"")
+                        request_body = json.loads(payload.replace("'", "\""))
+                    except json.JSONDecodeError:
+                        import ast
                         try:
-                            parsed_payload = json.loads(fixed_payload)
-                            logger.debug("Successfully parsed fixed JSON")
-                            request_body = parsed_payload
-                        except json.JSONDecodeError:
-                            # Try as Python literal
-                            import ast
-                            try:
-                                parsed_payload = ast.literal_eval(payload)
-                                logger.debug("Successfully parsed payload as Python literal")
-                                request_body = parsed_payload
-                            except (SyntaxError, ValueError) as e2:
-                                logger.debug(f"Failed to parse payload string: {e2}")
-                                return {"error": f"Invalid payload format: {e2}", "payload": payload}
-                except Exception as e:
-                    logger.debug(f"Error parsing payload string: {e}")
-                    return {"error": f"Failed to parse payload: {e}", "payload": payload}
+                            request_body = ast.literal_eval(payload)
+                        except (SyntaxError, ValueError) as e:
+                            return {"error": f"Invalid payload format: {e}"}
             else:
-                # If payload is already a dictionary, use it directly
-                logger.debug("Using provided payload dictionary")
-                request_body = payload
+                request_body = payload if payload is not None else {}
 
-            # Import the GetTraces class
-            try:
-                from instana_client.models.get_traces import (
-                    GetTraces,
-                )
-                from instana_client.models.group import Group
-                logger.debug("Successfully imported GetTraces")
-            except ImportError as e:
-                logger.debug(f"Error importing GetTraces: {e}")
-                return {"error": f"Failed to import GetTraces: {e!s}"}
-
-            # Create an GetTraces object from the request body
-            try:
-                logger.debug(f"Creating get_traces with params: {request_body}")
-                config_object = GetTraces.from_dict(request_body)
-                logger.debug("Successfully got traces")
-            except Exception as e:
-                logger.debug(f"Error creating get_traces: {e}")
-                return {"error": f"Failed to get tracest: {e!s}"}
-
-            # Call the get_traces method from the SDK
-            logger.debug("Calling get_traces with config object")
-            result = api_client.get_traces(
-                get_traces=config_object
-            )
-            # Convert the result to a dictionary
-            if hasattr(result, 'to_dict'):
-                result_dict = result.to_dict()
-            else:
-                result_dict = result or {"success": True, "message": "Get traces"}
-
-            # Save to file
+            # Prepare output path
             timestamp = int(datetime.now().timestamp())
             output_path = f"/tmp/instana_traces_{timestamp}.jsonl"
 
-            # Write each item as a separate line in JSONL format
-            items = result_dict.get("items", [])
-            with open(output_path, 'w') as f:
-                for item in items:
-                    f.write(json.dumps(item) + '\n')
+            # Define fetcher function
+            def fetch_page(cursor: Optional[Any]) -> Dict[str, Any]:
+                body = request_body.copy()
 
-            file_size = Path(output_path).stat().st_size
-            total_traces = (len(result_dict.get("items", [])) if isinstance(result_dict, dict) else 0)
+                # Apply cursor for subsequent pages
+                if cursor and isinstance(cursor, dict):
+                    if "pagination" not in body:
+                        body["pagination"] = {}
+                    if "ingestionTime" in cursor:
+                        body["pagination"]["ingestionTime"] = cursor["ingestionTime"]
+                    if "offset" in cursor:
+                        body["pagination"]["offset"] = cursor["offset"]
+
+                # Call API
+                config = GetTraces.from_dict(body)
+                result = api_client.get_traces(get_traces=config)
+                return result.to_dict() if hasattr(result, 'to_dict') else result
+
+            # Execute pagination
+            result = paginate_and_collect(
+                fetcher=fetch_page,
+                output_path=output_path,
+                max_retrieval_size=max_retrieval_size
+            )
 
             return {
-                "file_path": output_path,
-                "summary": {
-                    "total_traces": total_traces,
-                    "file_size_bytes": file_size,
-                },
-                "metadata": {
-                    "can_load_more": result_dict.get("canLoadMore", False),
-                    "total_hits": result_dict.get("totalHits", 0),
-                    "total_represented_item_count": result_dict.get("totalRepresentedItemCount", 0),
-                    "total_retained_item_count": result_dict.get("totalRetainedItemCount", 0),
-                    "adjusted_timeframe": result_dict.get("adjustedTimeframe", {}),
-                },
+                "file_path": result.file_path,
+                "item_count": result.item_count,
+                "file_size_bytes": result.file_size_bytes,
+                "stop_reason": result.stop_reason,
             }
 
         except Exception as e:

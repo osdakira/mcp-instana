@@ -277,7 +277,7 @@ class TestApplicationAnalyzeMCPTools(unittest.TestCase):
         self.mock_paginate.return_value = mock_pager_result
 
         # Run without specifying max_retrieval_size
-        result = asyncio.run(
+        asyncio.run(
             self.tools.get_all_traces(payload={})
         )
 

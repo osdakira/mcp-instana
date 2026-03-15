@@ -5,6 +5,7 @@ This module provides a unified MCP tool that routes events monitoring queries
 to the appropriate specialized tools.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -82,7 +83,7 @@ class SmartRouterEventsMCPTool(BaseInstanaClient):
     async def manage_events(
         self,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
@@ -156,6 +157,16 @@ class SmartRouterEventsMCPTool(BaseInstanaClient):
             # Initialize params if not provided
             if params is None:
                 params = {}
+            # Handle case where FastMCP passes params as a JSON string
+            elif isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError as e:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "operation": operation,
+                    }
+
 
             # Validate operation
             if operation not in EVENTS_VALID_OPERATIONS:

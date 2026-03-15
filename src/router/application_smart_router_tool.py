@@ -119,10 +119,14 @@ class SmartRouterMCPTool(BaseInstanaClient):
             Get metric catalog: operation="get_metric_catalog"
 
         ANALYZE (resource_type="analyze"):
-            operations: get_all_traces
-            params: {payload, max_retrieval_size}
+            operations: get_all_traces, get_trace_details
+            params: {payload, max_retrieval_size} for get_all_traces
+            params: {id, retrievalSize, max_retrieval_size} for get_trace_details
+
+            Note: retrievalSize = items per page, max_retrieval_size = total items limit
 
             Get all traces: operation="get_all_traces", params={"payload": {...}, "max_retrieval_size": 200}
+            Get trace details: operation="get_trace_details", params={"id": "trace_id", "retrievalSize": 100, "max_retrieval_size": 200}
 
             Sample payload for get_all_traces:
             {
@@ -584,7 +588,7 @@ class SmartRouterMCPTool(BaseInstanaClient):
         self, operation: str, params: Dict[str, Any], ctx
     ) -> Dict[str, Any]:
         """Handle Application Analyze operations."""
-        valid_operations = ["get_all_traces"]
+        valid_operations = ["get_all_traces", "get_trace_details"]
 
         if operation not in valid_operations:
             return {

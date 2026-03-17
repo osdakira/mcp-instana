@@ -1106,13 +1106,17 @@ wheels = [
 
 [[package]]
 name = "instana-client"
-version = "1.0.3"
-source = { git = "https://github.com/instana/client-python?rev=main#d0416dc20c55301313e334747379ec3fcfef51f2" }
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "python-dateutil" },
     { name = "typing-extensions" },
     { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/4f/41b38fbd312c427779ca0062b1f1407138da429a06dc59484845ceae96d3/instana_client-1.0.4.tar.gz", hash = "sha256:e61c1bd8230900069bf12f188ae5a157e754b1a2859959ff2e1972d317783b21", size = 561967, upload-time = "2026-03-17T08:57:05.38Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/3e/6d577bd59ee67c43d3b6b09045b9b742272855d1eac9e99ae35a9db510fb/instana_client-1.0.4-py3-none-any.whl", hash = "sha256:25d3cbc9e1eecc34bc094897389a846263e69fd54a067db72d50f78281365f24", size = 1206631, upload-time = "2026-03-17T08:57:03.534Z" },
 ]
 
 [[package]]
@@ -1544,7 +1548,7 @@ dev = [
 requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.10.1" },
     { name = "fastmcp", specifier = "==2.13.0" },
-    { name = "instana-client", git = "https://github.com/instana/client-python?rev=main" },
+    { name = "instana-client", specifier = "==1.0.4" },
     { name = "lazy-imports" },
     { name = "mcp" },
     { name = "pydantic", specifier = "==2.11.7" },

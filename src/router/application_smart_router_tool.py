@@ -125,37 +125,7 @@ class SmartRouterMCPTool(BaseInstanaClient):
             Get all traces: operation="get_all_traces", params={"payload": {...}, "max_retrieval_size": 200}
 
             Sample payload for get_all_traces:
-            {
-                "includeInternal": false,
-                "includeSynthetic": false,
-                "pagination": {
-                    "retrievalSize": 1
-                },
-                "tagFilterExpression": {
-                    "type": "EXPRESSION",
-                    "logicalOperator": "AND",
-                    "elements": [
-                        {
-                            "type": "TAG_FILTER",
-                            "name": "endpoint.name",
-                            "operator": "EQUALS",
-                            "entity": "DESTINATION",
-                            "value": "GET /"
-                        },
-                        {
-                            "type": "TAG_FILTER",
-                            "name": "service.name",
-                            "operator": "EQUALS",
-                            "entity": "DESTINATION",
-                            "value": "groundskeeper"
-                        }
-                    ]
-                },
-                "order": {
-                    "by": "traceLabel",
-                    "direction": "DESC"
-                }
-            }
+            {"includeInternal": false, "includeSynthetic": false, "pagination": {"retrievalSize": 1}, "tagFilterExpression": {"type": "EXPRESSION", "logicalOperator": "AND", "elements": [{"type": "TAG_FILTER", "name": "endpoint.name", "operator": "EQUALS", "entity": "DESTINATION", "value": "GET /"}, {"type": "TAG_FILTER", "name": "service.name", "operator": "EQUALS", "entity": "DESTINATION", "value": "groundskeeper"}]}, "order": {"by": "traceLabel", "direction": "DESC"}}
 
             Note: Due to large response sizes, trace data is saved to /tmp/instana_traces_{timestamp}.json
             and only the file path and summary are returned.

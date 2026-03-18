@@ -70,8 +70,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         Called by the smart router tool.
 
         Args:
-            operation: Operation to perform (get_all_traces)
-            params: Dictionary containing 'payload'
+            operation: Operation to perform (get_all_traces, get_trace_details)
+            params: Dictionary containing operation-specific parameters
             ctx: MCP context
 
         Returns:
@@ -81,6 +81,14 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             if operation == "get_all_traces":
                 payload = params.get('payload')
                 return await self.get_all_traces(payload, ctx=ctx)
+            elif operation == "get_trace_details":
+                return await self.get_trace_details(
+                    id=params.get('id'),
+                    retrievalSize=params.get('retrievalSize'),
+                    offset=params.get('offset'),
+                    ingestionTime=params.get('ingestionTime'),
+                    ctx=ctx
+                )
             else:
                 return {"error": f"Operation '{operation}' not supported"}
 

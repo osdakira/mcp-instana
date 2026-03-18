@@ -26,7 +26,7 @@ dependencies = [
     "mcp",
     # Instana API client - imported in src/event/events_tools.py
     # Using fix for Service.technologies optional field
-    "instana-client==1.0.4",
+    "instana-client @ git+https://github.com/instana/client-python@3e6ae2b43fde4b92e0fb44f7ef41bce908e067a8",
     # Lazy imports for Instana SDK - required by instana-client
     "lazy_imports",
     # HTTP client - imported in src/core/utils.py

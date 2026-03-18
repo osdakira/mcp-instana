@@ -6,6 +6,7 @@ This module provides application analyze tool functionality for Instana monitori
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -275,7 +276,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
-            output_path = f"/tmp/instana_traces_{timestamp}.jsonl"
+            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            output_path = f"{output_dir}/instana_traces_{timestamp}.jsonl"
 
             # Call API
             config = GetTraces.from_dict(request_body)

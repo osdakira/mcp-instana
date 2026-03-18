@@ -120,22 +120,25 @@ class SmartRouterMCPTool(BaseInstanaClient):
 
         ANALYZE (resource_type="analyze"):
             operations: get_all_traces
-            params: {payload, max_retrieval_size}
+            params: {payload}
 
             Payload parameters:
             - timeFrame: Time range (windowSize, to)
             - includeInternal, includeSynthetic: Include internal/synthetic traces
             - tagFilterExpression: Filter by tags
-            - pagination: {retrievalSize}
+            - pagination: {retrievalSize, ingestionTime, offset}
             - order: {by, direction}
 
             Minimal example:
-            params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}}}
+            params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "pagination": {"retrievalSize": 200}}}
 
             Full example:
-            params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "includeInternal": false, "includeSynthetic": false, "tagFilterExpression": {"type": "EXPRESSION", "logicalOperator": "AND", "elements": [{"type": "TAG_FILTER", "name": "service.name", "operator": "EQUALS", "entity": "DESTINATION", "value": "groundskeeper"}]}, "pagination": {"retrievalSize": 1}, "order": {"by": "traceLabel", "direction": "DESC"}}, "max_retrieval_size": 200}
+            params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "includeInternal": false, "includeSynthetic": false, "tagFilterExpression": {"type": "EXPRESSION", "logicalOperator": "AND", "elements": [{"type": "TAG_FILTER", "name": "service.name", "operator": "EQUALS", "entity": "DESTINATION", "value": "groundskeeper"}]}, "pagination": {"retrievalSize": 200}, "order": {"by": "traceLabel", "direction": "DESC"}}}
 
-            Note: Trace data saved to /tmp/instana_traces_{timestamp}.jsonl (returns file path and summary only)
+            Pagination example (for next page):
+            params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "pagination": {"retrievalSize": 200, "ingestionTime": 1725519793, "offset": 199}}}
+
+            Note: Trace data saved to /tmp/instana_traces_{timestamp}.jsonl. Returns filePath, itemCount, fileSizeBytes, canLoadMore, totalHits, and cursor (ingestionTime, offset) if more data available. Use cursor values in pagination for next page.
 
         Args:
             resource_type: "metrics", "alert_config", "global_alert_config", "settings", "catalog", or "analyze"

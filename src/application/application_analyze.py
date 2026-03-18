@@ -166,9 +166,10 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
             ctx: Optional context for the request.
         Returns:
-            Dict[str, Any]: Details of the specified trace.
+            Dict containing filePath, itemCount, fileSizeBytes, canLoadMore,
+            and cursor fields (ingestionTime, offset) if more data available
         """
-
+        output_path = None
         try:
             if not id:
                 logger.warning("Trace ID must be provided")
@@ -181,6 +182,11 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
                 logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
                 return {"error": "retrievalSize must be between 1 and 10000"}
+
+            # Prepare output path
+            timestamp = int(datetime.now().timestamp())
+            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            output_path = f"{output_dir}/instana_trace_details_{id}_{timestamp}.jsonl"
 
             logger.debug(f"Fetching trace details for id={id}")
             result = api_client.get_trace_download(
@@ -198,11 +204,39 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                 result_dict = result
 
             logger.debug(f"Result from get_trace_details: {result_dict}")
-            # Ensure we return a dictionary
-            return dict(result_dict) if not isinstance(result_dict, dict) else result_dict
+
+            items = result_dict.get("items", [])
+            can_load_more = result_dict.get("canLoadMore", False)
+
+            # Write items to JSONL file
+            with open(output_path, 'w') as f:
+                for item in items:
+                    f.write(json.dumps(item) + '\n')
+
+            file_size = Path(output_path).stat().st_size if Path(output_path).exists() else 0
+
+            # Build response
+            response = {
+                "filePath": output_path,
+                "itemCount": len(items),
+                "fileSizeBytes": file_size,
+                "canLoadMore": can_load_more
+            }
+
+            # Add cursor fields if more data available
+            if items and can_load_more and "cursor" in items[-1]:
+                cursor = items[-1]["cursor"]
+                if "ingestionTime" in cursor:
+                    response["ingestionTime"] = cursor["ingestionTime"]
+                if "offset" in cursor:
+                    response["offset"] = cursor["offset"]
+
+            return response
 
         except Exception as e:
             logger.error(f"Error getting trace details: {e}", exc_info=True)
+            if output_path and Path(output_path).exists():
+                Path(output_path).unlink()
             return {"error": f"Failed to get trace details: {e!s}"}
 
 

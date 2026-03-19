@@ -160,7 +160,12 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             - id (required): Trace ID
             - retrievalSize (optional): Number of records (1-10000)
             - offset (optional): Records to skip from ingestionTime
-            - ingestionTime (optional): Starting point timestamp (required if offset provided)
+            - ingestionTime (optional): Starting point timestamp - can be provided as:
+                - Unix timestamp in seconds (e.g., 1725519793)
+                - Human-readable datetime string (e.g., "10 March 2026, 2:00 PM")
+                - Datetime with timezone (e.g., "10 March 2026, 2:00 PM|IST")
+                - If no timezone specified, UTC is assumed
+                Required if offset provided
 
             Example:
             params={"id": "trace-id-123", "retrievalSize": 100}
@@ -623,6 +628,25 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
 
                     # Update the field with converted timestamp
                     time_frame["to"] = result["timestamp"]
+
+        # Handle datetime string conversion for ingestionTime in get_trace_details
+        if operation == "get_trace_details" and "ingestionTime" in params:
+            ingestion_time = params["ingestionTime"]
+
+            if isinstance(ingestion_time, str):
+                result = self._convert_datetime_field(
+                    ingestion_time,
+                    "ingestionTime",
+                    "analyze",
+                    operation
+                )
+
+                # Check if conversion failed
+                if "error" in result:
+                    return result
+
+                # Update with converted timestamp (milliseconds)
+                params["ingestionTime"] = result["timestamp"]
 
         # Route to the analyze client with params
         result = await self.app_analyze_client.execute_analyze_operation(

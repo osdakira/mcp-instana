@@ -1,5 +1,8 @@
 # Changelog
 
+### 0.9.0
+-  **New Feature:**  Introduced a unified smart router to handle all SLO-related operations.
+
 ### 0.8.1
 -  **Fix:** Add `--env` flag for setting environment variables via CLI
 

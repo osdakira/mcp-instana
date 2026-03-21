@@ -16,42 +16,26 @@ class TestApplicationAnalyzeE2E:
 
     @pytest.mark.asyncio
     @pytest.mark.mocked
-    async def test_get_all_traces_multiple_pages_with_filters(self, instana_credentials):
-        """Test get_all_traces with multiple pages and filters"""
-        # Mock 3 pages of results
-        mock_results = [
-            {
-                "items": [
-                    {"traceId": "trace1", "timestamp": 1000},
-                    {"traceId": "trace2", "timestamp": 2000}
-                ],
-                "canLoadMore": True,
-            },
-            {
-                "items": [
-                    {"traceId": "trace3", "timestamp": 3000},
-                    {"traceId": "trace4", "timestamp": 4000}
-                ],
-                "canLoadMore": True,
-            },
-            {
-                "items": [
-                    {"traceId": "trace5", "timestamp": 5000}
-                ],
-                "canLoadMore": False,
-            }
-        ]
+    async def test_get_all_traces_single_page_with_filters(self, instana_credentials):
+        """Test get_all_traces with single page and filters"""
+        # Mock single page result
+        mock_result_dict = {
+            "items": [
+                {"traceId": "trace1", "timestamp": 1000},
+                {"traceId": "trace2", "timestamp": 2000},
+                {"traceId": "trace3", "timestamp": 3000},
+                {"traceId": "trace4", "timestamp": 4000},
+                {"traceId": "trace5", "timestamp": 5000}
+            ],
+            "canLoadMore": False,
+            "totalHits": 5
+        }
 
-        call_count = 0
-        def mock_get_traces(*args, **kwargs):
-            nonlocal call_count
-            mock_result = MagicMock()
-            mock_result.to_dict.return_value = mock_results[call_count]
-            call_count += 1
-            return mock_result
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = mock_result_dict
 
         mock_api = MagicMock()
-        mock_api.get_traces.side_effect = mock_get_traces
+        mock_api.get_traces.return_value = mock_result
 
         client = ApplicationAnalyzeMCPTools(
             read_token=instana_credentials["api_token"],
@@ -62,6 +46,10 @@ class TestApplicationAnalyzeE2E:
         result = await client.get_all_traces(
             payload={
                 "pagination": {"retrievalSize": 10},
+                "timeFrame": {
+                    "to": 1704110400000,
+                    "windowSize": 3600000
+                },
                 "tagFilterExpression": {
                     "type": "EXPRESSION",
                     "logicalOperator": "AND",
@@ -80,19 +68,19 @@ class TestApplicationAnalyzeE2E:
         )
 
         assert isinstance(result, dict)
-        assert "file_path" in result
-        assert "item_count" in result
-        assert "file_size_bytes" in result
-        assert "stop_reason" in result
+        assert "filePath" in result
+        assert "itemCount" in result
+        assert "fileSizeBytes" in result
+        assert "canLoadMore" in result
 
         # Verify item count
-        assert result["item_count"] == 5
+        assert result["itemCount"] == 5
 
-        # Verify stop reason
-        assert result["stop_reason"] == "all_fetched"
+        # Verify canLoadMore
+        assert not result["canLoadMore"]
 
         # Verify file content
-        file_path = result["file_path"]
+        file_path = result["filePath"]
         assert Path(file_path).exists()
 
         with open(file_path, 'r') as f:
@@ -105,8 +93,8 @@ class TestApplicationAnalyzeE2E:
                 assert "traceId" in trace
                 assert "timestamp" in trace
 
-        # Verify API was called 3 times
-        assert mock_api.get_traces.call_count == 3
+        # Verify API was called once
+        assert mock_api.get_traces.call_count == 1
 
         # Verify tagFilterExpression was passed to API
         first_call_args = mock_api.get_traces.call_args_list[0]
@@ -137,64 +125,59 @@ class TestApplicationAnalyzeE2E:
 
     @pytest.mark.asyncio
     @pytest.mark.mocked
-    async def test_get_all_traces_max_retrieval_size_limit(self, instana_credentials):
-        """Test get_all_traces respects max_retrieval_size limit"""
-        # Create mock data with more items than max_retrieval_size
-        mock_results = [
-            {
-                "items": [{"traceId": f"trace{i}", "timestamp": i * 1000} for i in range(1, 6)],
-                "canLoadMore": True,
-            },
-            {
-                "items": [{"traceId": f"trace{i}", "timestamp": i * 1000} for i in range(6, 11)],
-                "canLoadMore": True,
-            }
-        ]
+    async def test_get_all_traces_with_cursor(self, instana_credentials):
+        """Test get_all_traces returns cursor when more data available"""
+        # Mock result with cursor
+        mock_result_dict = {
+            "items": [
+                {"traceId": "trace1", "timestamp": 1000},
+                {"traceId": "trace2", "timestamp": 2000, "cursor": {"ingestionTime": 2000, "offset": 5}}
+            ],
+            "canLoadMore": True,
+            "totalHits": 10
+        }
 
-        call_count = 0
-        def mock_get_traces(*args, **kwargs):
-            nonlocal call_count
-            mock_result = MagicMock()
-            mock_result.to_dict.return_value = mock_results[call_count]
-            call_count += 1
-            return mock_result
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = mock_result_dict
 
         mock_api = MagicMock()
-        mock_api.get_traces.side_effect = mock_get_traces
+        mock_api.get_traces.return_value = mock_result
 
         client = ApplicationAnalyzeMCPTools(
             read_token=instana_credentials["api_token"],
             base_url=instana_credentials["base_url"],
         )
 
-        # Set max_retrieval_size to 7 to trigger limit
-        # Note: Implementation fetches full pages, so with max_retrieval_size=7,
-        # it will fetch page 1 (5 items) + page 2 (5 items) = 10 items total
         result = await client.get_all_traces(
-            payload={"pagination": {"retrievalSize": 10}},
-            max_retrieval_size=7,
+            payload={
+                "pagination": {"retrievalSize": 2},
+                "timeFrame": {
+                    "to": 1704110400000,
+                    "windowSize": 3600000
+                }
+            },
             api_client=mock_api
         )
 
         assert isinstance(result, dict)
-        assert "file_path" in result
-        assert "item_count" in result
-        assert "stop_reason" in result
+        assert "filePath" in result
+        assert "itemCount" in result
+        assert "canLoadMore" in result
 
-        # Verify it stopped due to limit (fetches full pages, so 10 items total)
-        assert result["item_count"] == 10  # 5 from page 1 + 5 from page 2
-        assert result["stop_reason"] == "limit_reached"
+        # Verify cursor fields are returned
+        assert result["canLoadMore"]
+        assert "ingestionTime" in result
+        assert "offset" in result
+        assert result["ingestionTime"] == 2000
+        assert result["offset"] == 5
 
-        # Verify file exists and contains 10 lines
-        file_path = result["file_path"]
+        # Verify file exists and contains 2 lines
+        file_path = result["filePath"]
         assert Path(file_path).exists()
 
         with open(file_path, 'r') as f:
             lines = f.readlines()
-            assert len(lines) == 10
-
-        # Verify API was called twice
-        assert mock_api.get_traces.call_count == 2
+            assert len(lines) == 2
 
         # Clean up
         Path(file_path).unlink(missing_ok=True)
@@ -202,25 +185,9 @@ class TestApplicationAnalyzeE2E:
     @pytest.mark.asyncio
     @pytest.mark.mocked
     async def test_get_all_traces_api_error_cleanup(self, instana_credentials):
-        """Test get_all_traces cleans up partial file on API error"""
-        # First call succeeds, second call fails
-        mock_result_success = MagicMock()
-        mock_result_success.to_dict.return_value = {
-            "items": [{"traceId": "trace1", "timestamp": 1000}],
-            "canLoadMore": True,
-        }
-
-        call_count = 0
-        def mock_get_traces(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return mock_result_success
-            else:
-                raise Exception("API Error")
-
+        """Test get_all_traces cleans up file on API error"""
         mock_api = MagicMock()
-        mock_api.get_traces.side_effect = mock_get_traces
+        mock_api.get_traces.side_effect = Exception("API Error")
 
         client = ApplicationAnalyzeMCPTools(
             read_token=instana_credentials["api_token"],
@@ -229,7 +196,13 @@ class TestApplicationAnalyzeE2E:
 
         # Execute and expect error
         result = await client.get_all_traces(
-            payload={"pagination": {"retrievalSize": 10}},
+            payload={
+                "pagination": {"retrievalSize": 10},
+                "timeFrame": {
+                    "to": 1704110400000,
+                    "windowSize": 3600000
+                }
+            },
             api_client=mock_api
         )
 

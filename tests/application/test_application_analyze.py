@@ -92,11 +92,6 @@ mock_src_prompts = MagicMock()
 mock_src_core = MagicMock()
 mock_src_core_utils = MagicMock()
 
-# Mock src.application.application_utils
-mock_app_utils = MagicMock()
-mock_paginate_and_collect = MagicMock()
-mock_app_utils.paginate_and_collect = mock_paginate_and_collect
-
 
 class MockBaseInstanaClient:
     def __init__(self, read_token: str, base_url: str):
@@ -127,7 +122,6 @@ _mocks = {
     "src.prompts": mock_src_prompts,
     "src.core": mock_src_core,
     "src.core.utils": mock_src_core_utils,
-    "src.application.application_utils": mock_app_utils,
 }
 
 # Import the class under test with sys.modules mocked
@@ -144,16 +138,11 @@ class TestApplicationAnalyzeMCPTools(unittest.TestCase):
         mock_configuration.reset_mock()
         mock_api_client.reset_mock()
         mock_app_analyze_api.reset_mock()
-        mock_paginate_and_collect.reset_mock()
-
-        # Clear side_effect from previous tests
-        mock_paginate_and_collect.side_effect = None
 
         # Store references to the global mocks
         self.mock_configuration = mock_configuration
         self.mock_api_client = mock_api_client
         self.analyze_api = MagicMock()
-        self.mock_paginate = mock_paginate_and_collect
 
         # Create the client
         self.read_token = "test_token"
@@ -165,125 +154,125 @@ class TestApplicationAnalyzeMCPTools(unittest.TestCase):
         # Set up the client's API attribute
         self.tools.analyze_api = self.analyze_api
 
-    def test_get_all_traces_success(self):
-        """Test successful get_all_traces with pagination"""
-        # Mock paginate_and_collect result
-        mock_pager_result = MagicMock()
-        mock_pager_result.file_path = "/tmp/instana_traces_123456.jsonl"
-        mock_pager_result.item_count = 5
-        mock_pager_result.file_size_bytes = 2048
-        mock_pager_result.stop_reason = "all_fetched"
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('pathlib.Path.stat')
+    @patch('pathlib.Path.exists')
+    def test_get_all_traces_success(self, mock_exists, mock_stat, mock_open):
+        """Test successful get_all_traces with file output"""
+        # Mock file operations
+        mock_exists.return_value = True
+        mock_stat.return_value.st_size = 2048
 
-        self.mock_paginate.return_value = mock_pager_result
+        # Mock API response
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {
+            "items": [
+                {"id": 1, "cursor": {"ingestionTime": 100, "offset": 0}},
+                {"id": 2, "cursor": {"ingestionTime": 100, "offset": 1}}
+            ],
+            "canLoadMore": False,
+            "totalHits": 2
+        }
+        self.analyze_api.get_traces.return_value = mock_result
 
         # Run the test
         result = asyncio.run(
             self.tools.get_all_traces(
-                payload={"pagination": {"retrievalSize": 100}},
-                max_retrieval_size=100
+                payload={"pagination": {"retrievalSize": 100}}
             )
         )
 
         # Verify results
-        self.assertIn("file_path", result)
-        self.assertIn("item_count", result)
-        self.assertIn("file_size_bytes", result)
-        self.assertIn("stop_reason", result)
-        self.assertEqual(result["item_count"], 5)
-        self.assertEqual(result["stop_reason"], "all_fetched")
-        self.assertIn("/tmp/instana_traces_", result["file_path"])
+        self.assertIn("filePath", result)
+        self.assertIn("itemCount", result)
+        self.assertIn("fileSizeBytes", result)
+        self.assertIn("canLoadMore", result)
+        self.assertIn("totalHits", result)
+        self.assertEqual(result["itemCount"], 2)
+        self.assertEqual(result["canLoadMore"], False)
+        self.assertEqual(result["totalHits"], 2)
+        self.assertIn("/tmp/instana_traces_", result["filePath"])
 
-        # Verify paginate_and_collect was called
-        self.mock_paginate.assert_called_once()
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('pathlib.Path.stat')
+    @patch('pathlib.Path.exists')
+    def test_get_all_traces_with_cursor(self, mock_exists, mock_stat, mock_open):
+        """Test get_all_traces returns cursor when more data available"""
+        # Mock file operations
+        mock_exists.return_value = True
+        mock_stat.return_value.st_size = 4096
 
-    def test_get_all_traces_with_max_retrieval_size(self):
-        """Test get_all_traces with custom max_retrieval_size"""
-        # Mock paginate_and_collect result
-        mock_pager_result = MagicMock()
-        mock_pager_result.file_path = "/tmp/instana_traces_123456.jsonl"
-        mock_pager_result.item_count = 500
-        mock_pager_result.file_size_bytes = 10240
-        mock_pager_result.stop_reason = "all_fetched"
+        # Mock API response with canLoadMore=True
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {
+            "items": [
+                {"id": 1, "cursor": {"ingestionTime": 100, "offset": 0}},
+                {"id": 2, "cursor": {"ingestionTime": 100, "offset": 1}}
+            ],
+            "canLoadMore": True,
+            "totalHits": 100
+        }
+        self.analyze_api.get_traces.return_value = mock_result
 
-        self.mock_paginate.return_value = mock_pager_result
-
-        # Run the test with max_retrieval_size=500
+        # Run the test
         result = asyncio.run(
             self.tools.get_all_traces(
-                payload={"pagination": {"retrievalSize": 100}},
-                max_retrieval_size=500
+                payload={"pagination": {"retrievalSize": 2}}
             )
         )
 
-        # Verify results are returned as-is from paginate_and_collect
-        self.assertEqual(result["item_count"], 500)
-        self.assertEqual(result["stop_reason"], "all_fetched")
-        self.assertEqual(result["file_path"], "/tmp/instana_traces_123456.jsonl")
-        self.assertEqual(result["file_size_bytes"], 10240)
+        # Verify results
+        self.assertEqual(result["canLoadMore"], True)
+        self.assertIn("ingestionTime", result)
+        self.assertIn("offset", result)
+        self.assertEqual(result["ingestionTime"], 100)
+        self.assertEqual(result["offset"], 1)
 
-        # Verify max_retrieval_size was passed to paginate_and_collect
-        call_args = self.mock_paginate.call_args
-        self.assertEqual(call_args.kwargs["max_retrieval_size"], 500)
-
-    def test_get_all_traces_with_string_payload(self):
+    @patch('builtins.open', new_callable=MagicMock)
+    @patch('pathlib.Path.stat')
+    @patch('pathlib.Path.exists')
+    def test_get_all_traces_with_string_payload(self, mock_exists, mock_stat, mock_open):
         """Test get_all_traces with string payload"""
-        # Mock paginate_and_collect result
-        mock_pager_result = MagicMock()
-        mock_pager_result.file_path = "/tmp/instana_traces_123456.jsonl"
-        mock_pager_result.item_count = 2
-        mock_pager_result.file_size_bytes = 512
-        mock_pager_result.stop_reason = "all_fetched"
+        # Mock file operations
+        mock_exists.return_value = True
+        mock_stat.return_value.st_size = 512
 
-        self.mock_paginate.return_value = mock_pager_result
+        # Mock API response
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {
+            "items": [{"id": 1, "cursor": {"ingestionTime": 100, "offset": 0}}],
+            "canLoadMore": False,
+            "totalHits": 1
+        }
+        self.analyze_api.get_traces.return_value = mock_result
 
         # Run with JSON string
         result = asyncio.run(
             self.tools.get_all_traces(
-                payload='{"pagination": {"retrievalSize": 50}}',
-                max_retrieval_size=100
+                payload='{"pagination": {"retrievalSize": 50}}'
             )
         )
 
         # Verify results
-        self.assertIn("file_path", result)
-        self.assertIn("item_count", result)
+        self.assertIn("filePath", result)
+        self.assertIn("itemCount", result)
+        self.assertEqual(result["itemCount"], 1)
 
     def test_get_all_traces_error_handling(self):
         """Test get_all_traces error handling"""
-        # Mock paginate_and_collect to raise an exception
-        self.mock_paginate.side_effect = Exception("Pagination error")
+        # Mock API to raise an exception
+        self.analyze_api.get_traces.side_effect = Exception("API error")
 
         # Run the test
         result = asyncio.run(
             self.tools.get_all_traces(
-                payload={"pagination": {"retrievalSize": 100}},
-                max_retrieval_size=100
+                payload={"pagination": {"retrievalSize": 100}}
             )
         )
 
         # Verify error response
         self.assertIn("error", result)
         self.assertIn("Failed to get traces", result["error"])
-
-    def test_get_all_traces_default_max_retrieval_size(self):
-        """Test get_all_traces uses default max_retrieval_size=200"""
-        # Mock paginate_and_collect result
-        mock_pager_result = MagicMock()
-        mock_pager_result.file_path = "/tmp/instana_traces_123456.jsonl"
-        mock_pager_result.item_count = 50
-        mock_pager_result.file_size_bytes = 1024
-        mock_pager_result.stop_reason = "all_fetched"
-
-        self.mock_paginate.return_value = mock_pager_result
-
-        # Run without specifying max_retrieval_size
-        asyncio.run(
-            self.tools.get_all_traces(payload={})
-        )
-
-        # Verify default max_retrieval_size=200 was used
-        call_args = self.mock_paginate.call_args
-        self.assertEqual(call_args.kwargs["max_retrieval_size"], 200)
 
 
 if __name__ == "__main__":

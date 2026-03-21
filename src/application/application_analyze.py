@@ -4,6 +4,7 @@ Application Analyze MCP Tools Module
 This module provides application analyze tool functionality for Instana monitoring.
 """
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,6 @@ from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
-from src.application.application_utils import paginate_and_collect
 from src.prompts import mcp
 
 # Import the necessary classes from the SDK
@@ -70,7 +70,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
         Args:
             operation: Operation to perform (get_all_traces)
-            params: Dictionary containing 'payload' and optionally 'max_retrieval_size'
+            params: Dictionary containing 'payload'
             ctx: MCP context
 
         Returns:
@@ -79,8 +79,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         try:
             if operation == "get_all_traces":
                 payload = params.get('payload')
-                max_retrieval_size = params.get('max_retrieval_size', 200)
-                return await self.get_all_traces(payload, max_retrieval_size=max_retrieval_size, ctx=ctx)
+                return await self.get_all_traces(payload, ctx=ctx)
             else:
                 return {"error": f"Operation '{operation}' not supported"}
 
@@ -215,19 +214,17 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     async def get_all_traces(
         self,
         payload: Optional[Union[Dict[str, Any], str]]=None,
-        max_retrieval_size: int = 200,
         api_client = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
-        Get all traces with pagination support and save to file.
+        Get traces from Instana API and save to JSONL file.
 
-        Due to large response sizes, trace data is saved to /tmp/instana_traces_{timestamp}.jsonl
-        and only the file path and summary are returned.
+        Fetches one page of traces and writes items to /tmp/instana_traces_{timestamp}.jsonl.
+        Returns file path and cursor info for fetching next page if available.
 
         Args:
             payload: Request payload for GetTraces API
-            max_retrieval_size: Maximum number of items to collect (default: 200)
             api_client: API client instance
             ctx: MCP context
 
@@ -235,7 +232,9 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         "includeInternal": false,
         "includeSynthetic": false,
         "pagination": {
-            "retrievalSize": 1
+            "retrievalSize": 200,
+            "ingestionTime": 1234567890,
+            "offset": 10
         },
         "tagFilterExpression": {
             "type": "EXPRESSION",
@@ -265,14 +264,14 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
 
         Returns:
-            Dict containing file_path, item_count, file_size_bytes, and stop_reason
+            Dict containing filePath, itemCount, fileSizeBytes, canLoadMore, totalHits,
+            and cursor fields (ingestionTime, offset) if more data available
         """
         try:
             # Parse the payload if it's a string
             if isinstance(payload, str):
                 logger.debug("Payload is a string, attempting to parse")
                 try:
-                    import json
                     request_body = json.loads(payload)
                 except json.JSONDecodeError:
                     try:
@@ -290,40 +289,44 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             timestamp = int(datetime.now().timestamp())
             output_path = f"/tmp/instana_traces_{timestamp}.jsonl"
 
-            # Define fetcher function
-            def fetch_page(cursor: Optional[Any]) -> Dict[str, Any]:
-                body = request_body.copy()
+            # Call API
+            config = GetTraces.from_dict(request_body)
+            result = api_client.get_traces(get_traces=config)
+            result_dict = result.to_dict() if hasattr(result, 'to_dict') else result
 
-                # Apply cursor for subsequent pages
-                if cursor and isinstance(cursor, dict):
-                    if "pagination" not in body:
-                        body["pagination"] = {}
-                    if "ingestionTime" in cursor:
-                        body["pagination"]["ingestionTime"] = cursor["ingestionTime"]
-                    if "offset" in cursor:
-                        body["pagination"]["offset"] = cursor["offset"]
+            # Write items to JSONL file
+            items = result_dict.get("items", [])
+            with open(output_path, 'w') as f:
+                for item in items:
+                    f.write(json.dumps(item) + '\n')
+            file_size = Path(output_path).stat().st_size if Path(output_path).exists() else 0
 
-                # Call API
-                config = GetTraces.from_dict(body)
-                result = api_client.get_traces(get_traces=config)
-                return result.to_dict() if hasattr(result, 'to_dict') else result
+            can_load_more = result_dict.get("canLoadMore", False)
+            total_hits = result_dict.get("totalHits")
 
-            # Execute pagination
-            result = paginate_and_collect(
-                fetcher=fetch_page,
-                output_path=output_path,
-                max_retrieval_size=max_retrieval_size
-            )
-
-            return {
-                "file_path": result.file_path,
-                "item_count": result.item_count,
-                "file_size_bytes": result.file_size_bytes,
-                "stop_reason": result.stop_reason,
+            # Build response
+            response = {
+                "filePath": output_path,
+                "itemCount": len(items),
+                "fileSizeBytes": file_size,
+                "canLoadMore": can_load_more,
+                "totalHits": total_hits
             }
 
+            # Add cursor fields if more data available
+            if items and can_load_more and "cursor" in items[-1]:
+                cursor = items[-1]["cursor"]
+                if "ingestionTime" in cursor:
+                    response["ingestionTime"] = cursor["ingestionTime"]
+                if "offset" in cursor:
+                    response["offset"] = cursor["offset"]
+
+            return response
+
         except Exception as e:
-            logger.error(f"Error in get_traces: {e}")
+            logger.error(f"Error in get_traces: {e}", exc_info=True)
+            if Path(output_path).exists():
+                Path(output_path).unlink()
             return {"error": f"Failed to get traces: {e!s}"}
 
     # @register_as_tool(

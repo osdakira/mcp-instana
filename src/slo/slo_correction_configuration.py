@@ -9,7 +9,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp.client.client import ClientSamplingHandler
 from instana_client.models.correction_configuration import CorrectionConfiguration
 from instana_client.models.correction_scheduling import CorrectionScheduling
 

@@ -1,6 +1,6 @@
 # Changelog
 
-### 0.9.5
+### 0.9.6
 -  **New Feature:** Introduced a unified smart router to handle all releases-related operations.
 
 ### 0.9.0

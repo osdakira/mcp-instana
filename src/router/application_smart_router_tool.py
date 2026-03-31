@@ -11,12 +11,13 @@ from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
+from src.core.timestamp_utils import convert_to_timestamp
 from src.core.utils import BaseInstanaClient, register_as_tool
 
 logger = logging.getLogger(__name__)
 
 
-class SmartRouterMCPTool(BaseInstanaClient):
+class ApplicationSmartRouterMCPTool(BaseInstanaClient):
     """
     Smart router that routes queries to Application Metrics, Alert Configuration, and Catalog tools.
     The LLM agent determines the appropriate operation based on query understanding.
@@ -127,6 +128,13 @@ class SmartRouterMCPTool(BaseInstanaClient):
 
             Payload parameters:
             - timeFrame: Time range (windowSize, to)
+                windowSize: Time window in milliseconds
+                to: End time - can be provided as:
+                    - Unix timestamp in milliseconds (e.g., 1710658800000)
+                    - Human-readable datetime string (e.g., "10 March 2026, 2:00 PM")
+                    - Datetime with timezone (e.g., "10 March 2026, 2:00 PM|IST")
+                    - If no timezone specified, UTC is assumed
+                Supported datetime formats: "10 March 2026, 2:00 PM", "2026-03-10 14:00:00", "March 10, 2026 2 PM", etc.
             - includeInternal, includeSynthetic: Include internal/synthetic traces
             - tagFilterExpression: Filter by tags
             - pagination: {retrievalSize, ingestionTime, offset}
@@ -134,6 +142,9 @@ class SmartRouterMCPTool(BaseInstanaClient):
 
             Minimal example:
             params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "pagination": {"retrievalSize": 200}}}
+
+            Example with datetime:
+            params={"payload": {"timeFrame": {"windowSize": 3600000, "to": "10 March 2026, 2:00 PM|UTC"}, "pagination": {"retrievalSize": 200}}}
 
             Full example:
             params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "includeInternal": false, "includeSynthetic": false, "tagFilterExpression": {"type": "EXPRESSION", "logicalOperator": "AND", "elements": [{"type": "TAG_FILTER", "name": "service.name", "operator": "EQUALS", "entity": "DESTINATION", "value": "groundskeeper"}]}, "pagination": {"retrievalSize": 200}, "order": {"by": "traceLabel", "direction": "DESC"}}}
@@ -201,7 +212,7 @@ class SmartRouterMCPTool(BaseInstanaClient):
             elif isinstance(params, str):
                 try:
                     params = json.loads(params)
-                except json.JSONDecodeError as e:
+                except json.JSONDecodeError:
                     return {
                         "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
                         "resource_type": resource_type,
@@ -602,6 +613,28 @@ class SmartRouterMCPTool(BaseInstanaClient):
                 "valid_operations": valid_operations,
             }
 
+        # Handle datetime string conversion for timeFrame.to in payload
+        if "payload" in params and isinstance(params["payload"], dict):
+            payload = params["payload"]
+
+            if "timeFrame" in payload and isinstance(payload["timeFrame"], dict):
+                time_frame = payload["timeFrame"]
+
+                if "to" in time_frame and isinstance(time_frame["to"], str):
+                    result = self._convert_datetime_field(
+                        time_frame["to"],
+                        "timeFrame.to",
+                        "analyze",
+                        operation
+                    )
+
+                    # Check if conversion failed or needs elicitation
+                    if "elicitation_needed" in result or "error" in result:
+                        return result
+
+                    # Update the field with converted timestamp
+                    time_frame["to"] = result["timestamp"]
+
         # Route to the analyze client with params
         result = await self.app_analyze_client.execute_analyze_operation(
             operation=operation, params=params, ctx=ctx
@@ -612,6 +645,49 @@ class SmartRouterMCPTool(BaseInstanaClient):
             "operation": operation,
             "results": result,
         }
+
+    def _convert_datetime_field(
+        self,
+        field_value: str,
+        field_name: str,
+        resource_type: str,
+        operation: str
+    ) -> Dict[str, Any]:
+        """
+        Convert datetime string field to timestamp with timezone validation.
+
+        Args:
+            field_value: The datetime string value to convert
+            field_name: Name of the field being converted (for error messages)
+            resource_type: Resource type for error context
+            operation: Operation for error context
+
+        Returns:
+            Dict with either converted timestamp or elicitation/error response
+        """
+        logger.debug(f"[_convert_datetime_field] Converting {field_name} datetime string: {field_value}")
+
+        # Check if timezone is provided, default to UTC if not
+        if "|" not in field_value:
+            datetime_str = field_value
+            timezone = "UTC"
+            logger.debug(f"[_convert_datetime_field] No timezone specified for {field_name}, defaulting to UTC")
+        else:
+            # Extract timezone if provided in format "datetime|timezone"
+            datetime_str, timezone = field_value.split("|", 1)
+
+        conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
+        if "error" in conversion_result:
+            return {
+                "error": f"Failed to convert {field_name} datetime: {conversion_result['error']}",
+                "resource_type": resource_type,
+                "operation": operation
+            }
+
+        timestamp = conversion_result["timestamp"]
+        logger.info(f"[_convert_datetime_field] Converted {field_name} to timestamp: {timestamp}")
+
+        return {"success": True, "timestamp": timestamp}
 
     async def _handle_catalog(
         self,

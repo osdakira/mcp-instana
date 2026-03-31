@@ -288,10 +288,22 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                 "operator": "EQUALS",
                 "entity": "DESTINATION",
                 "value": "GET /"
+            },
+            {
+                "type": "TAG_FILTER",
+                "name": "service.name",
+                "operator": "EQUALS",
+                "entity": "DESTINATION",
+                "value": "groundskeeper"
             }
             ]
+        },
+        "order": {
+            "by": "traceLabel",
+            "direction": "DESC"
         }
         }
+
 
         Returns:
             Dict containing filePath, itemCount, fileSizeBytes, canLoadMore, totalHits,

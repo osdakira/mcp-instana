@@ -72,6 +72,8 @@ class MCPState:
     smart_router_events_client: Any = None
     smart_router_website_client: Any = None
     smart_router_automation_client: Any = None
+    smart_router_slo_client: Any = None
+    smart_router_releases_client: Any = None
 
     # Infrastructure - Only the new two-pass elicitation tool
     infra_analyze_new_client: Any = None
@@ -128,10 +130,10 @@ async def lifespan(server: FastMCP) -> AsyncIterator[MCPState]:
         # Yield empty state if client creation failed
         yield MCPState()
 
-def create_app(token: str, base_url: str, port: int = int(os.getenv("PORT", "8080")), enabled_categories: str = "all") -> tuple[FastMCP, int]:
+def create_app(token: str, base_url: str, port: int = int(os.getenv("PORT", "8080")), enabled_categories: str = "all") -> tuple[FastMCP, int, int]:
     """Create and configure the MCP server with the given credentials."""
     try:
-        server = FastMCP(name="Instana MCP Server", host="0.0.0.0", port=port)
+        server = FastMCP(name="Instana MCP Server")
 
         # Only create and register enabled clients/tools
         clients_state = create_clients(token, base_url, enabled_categories)
@@ -200,12 +202,12 @@ def create_app(token: str, base_url: str, port: int = int(os.getenv("PORT", "808
             logger.info(f"  - uncategorized: {uncategorized_count} prompts")
 
 
-        return server, tools_registered
+        return server, tools_registered, port
 
     except Exception:
         logger.error("Error creating app", exc_info=True)
         fallback_server = FastMCP("Instana Tools")
-        return fallback_server, 0  # Return a tuple with 0 tools registered
+        return fallback_server, 0, port  # Return a tuple with 0 tools registered and port
 
 async def execute_tool(tool_name: str, arguments: dict, clients_state) -> str:
     """Execute a tool and return result"""
@@ -227,38 +229,48 @@ async def execute_tool(tool_name: str, arguments: dict, clients_state) -> str:
 def get_client_categories():
     """Get client categories with lazy imports to avoid circular dependencies"""
     try:
-        from src.infrastructure.infrastructure_analyze_new import (
-            InfrastructureAnalyzeOption2,
+        from src.infrastructure.infrastructure_analyze import (
+            InfrastructureAnalyze,
         )
-        from src.router.application_smart_router_tool import SmartRouterMCPTool
+        from src.router.application_smart_router_tool import (
+            ApplicationSmartRouterMCPTool,
+        )
         from src.router.automation_smart_router_tool import AutomationSmartRouterMCPTool
         from src.router.custom_dashboard_smart_router_tool import (
             CustomDashboardSmartRouterMCPTool,
         )
-        from src.router.events_smart_router_tool import SmartRouterEventsMCPTool
-        from src.router.website_smart_router import SmartRouterWebsiteMCPTool
+        from src.router.events_smart_router_tool import EventsSmartRouterMCPTool
+        from src.router.releases_smart_router_tool import ReleasesSmartRouterMCPTool
+        from src.router.slo_smart_router_tool import SLOSmartRouterMCPTool
+        from src.router.website_smart_router import WebsiteSmartRouterMCPTool
     except ImportError as e:
         logger.warning(f"Could not import client classes: {e}")
         return {}
 
     return {
         "app": [
-            ('smart_router_client', SmartRouterMCPTool),
+            ('smart_router_client', ApplicationSmartRouterMCPTool),
         ],
         "infra": [
-            ('infra_analyze_new_client', InfrastructureAnalyzeOption2),
+            ('infra_analyze_new_client', InfrastructureAnalyze),
         ],
         "automation": [
             ('smart_router_automation_client', AutomationSmartRouterMCPTool),
         ],
         "website": [
-            ('smart_router_website_client', SmartRouterWebsiteMCPTool),
+            ('smart_router_website_client', WebsiteSmartRouterMCPTool),
         ],
         "events": [
-            ('smart_router_events_client', SmartRouterEventsMCPTool),
+            ('smart_router_events_client', EventsSmartRouterMCPTool),
         ],
         "settings": [
             ('smart_router_custom_dashboard_client', CustomDashboardSmartRouterMCPTool),
+        ],
+        "slo": [
+            ('smart_router_slo_client', SLOSmartRouterMCPTool),
+        ],
+        "releases": [
+            ('smart_router_releases_client', ReleasesSmartRouterMCPTool),
         ]
     }
 
@@ -380,7 +392,7 @@ def main():
             "--tools",
             type=str,
             metavar='<categories>',
-            help="Comma-separated list of tool categories to enable (--tools router,infra,app,events,automation,website,settings). Also controls which prompts are enabled. If not provided, all tools and prompts are enabled. Use 'router' for smart routing across app and infra metrics."
+            help="Comma-separated list of tool categories to enable (--tools infra, app, events, automation, website, settings, slo). Also controls which prompts are enabled. If not provided, all tools and prompts are enabled. Use 'router' for smart routing across app and infra metrics."
         )
         parser.add_argument(
             "--list-tools",
@@ -394,11 +406,14 @@ def main():
             help="Port to listen on (default: 8080, can be overridden with PORT env var)"
         )
         parser.add_argument(
-            "--env",
-            action="append",
-            metavar="KEY=VALUE",
-            default=None,
-            help="Set environment variable (e.g. --env INSTANA_BASE_URL=https://... --env INSTANA_API_TOKEN=...). Can be repeated."
+            "--api-token",
+            type=str,
+            help="Instana API token (overrides INSTANA_API_TOKEN env var)"
+        )
+        parser.add_argument(
+            "--base-url",
+            type=str,
+            help="Instana base URL (overrides INSTANA_BASE_URL env var)"
         )
         # Check for help arguments before parsing
         if len(sys.argv) > 1 and any(arg in ['-h','--h','--help','-help'] for arg in sys.argv[1:]):
@@ -428,24 +443,13 @@ def main():
 
         args = parser.parse_args()
 
-        # Apply --env KEY=VALUE overrides (e.g. INSTANA_BASE_URL, INSTANA_API_TOKEN)
-        if args.env:
-            for env_spec in args.env:
-                if "=" in env_spec:
-                    key, _, value = env_spec.partition("=")
-                    key = key.strip()
-                    if key:
-                        os.environ[key] = value
-                else:
-                    logger.warning("Ignoring malformed --env (expected KEY=VALUE): %s", env_spec)
-
         # Set log level based on command line arguments
         if args.debug:
             set_log_level("DEBUG")
         else:
             set_log_level(args.log_level)
 
-        all_categories = {"app", "infra", "events", "automation", "website", "settings"}
+        all_categories = {"app", "infra", "events", "automation", "website", "settings", "slo", "releases"}
 
         # Handle --list-tools option
         if args.list_tools:
@@ -473,7 +477,7 @@ def main():
                 enabled = set(all_categories)
 
         if invalid:
-            logger.error(f"Error: Unknown category/categories: {', '.join(invalid)}. Available categories: app, infra, events, automation, website, settings")
+            logger.error(f"Error: Unknown category/categories: {', '.join(invalid)}. Available categories: app, infra, events, automation, website, settings, slo")
             sys.exit(2)
 
         # Print enabled tools for user information
@@ -496,10 +500,9 @@ def main():
                 f"Total enabled tools: {len(enabled_tool_classes)}"
             )
 
-        # Get credentials from environment variables for stdio mode
-        INSTANA_API_TOKEN, INSTANA_BASE_URL = get_instana_credentials()
-        logger.debug(f"INSTANA_API_TOKEN: {INSTANA_API_TOKEN}")
-        logger.debug(f"INSTANA_BASE_URL: {INSTANA_BASE_URL}")
+        # Get credentials from command line args or environment variables
+        INSTANA_API_TOKEN = args.api_token if args.api_token else os.getenv("INSTANA_API_TOKEN", "")
+        INSTANA_BASE_URL = args.base_url if args.base_url else os.getenv("INSTANA_BASE_URL", "")
 
         if args.transport == "stdio" or args.transport is None:
             if not validate_credentials(INSTANA_API_TOKEN, INSTANA_BASE_URL):
@@ -511,7 +514,7 @@ def main():
             enabled_categories = ",".join(enabled)
             # Ensure create_app is always called, even if credentials are missing
             # This is needed for test_main_function_missing_token
-            app, registered_tool_count = create_app(INSTANA_API_TOKEN, INSTANA_BASE_URL, args.port, enabled_categories)
+            app, registered_tool_count, port = create_app(INSTANA_API_TOKEN, INSTANA_BASE_URL, args.port, enabled_categories)
         except Exception as e:
             print(f"Failed to create MCP server: {e}", file=sys.stderr)
             sys.exit(1)
@@ -522,7 +525,7 @@ def main():
                 logger.info(f"FastMCP instance: {app}")
                 logger.info(f"Registered tools: {registered_tool_count}")
             try:
-                app.run(transport="streamable-http")
+                app.run(transport="streamable-http", host="0.0.0.0", port=port)
             except Exception as e:
                 logger.error(f"Failed to start HTTP server: {e}")
                 if args.debug:

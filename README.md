@@ -779,9 +779,10 @@ Here is an example of a GitHub Copilot response:
   - [x] Application Catalog
     - [x] Get application tag catalog
     - [x] Get application metric catalog
-- [x] **Infrastructure Analysis** (`analyze_infrastructure_elicitation`)
+- [x] **Infrastructure Analysis** (`analyze_infrastructure`)
   - [x] Two-pass elicitation for entity/metric queries
-  - [x] Support for multiple entity types (JVM, Kubernetes, Docker, etc.)
+  - [x] Dynamic support for all entity types from Instana API catalog (JVM, Kubernetes, Docker, hosts, databases, message queues, and more)
+  - [x] Automatically synchronized with your Instana installation's available plugins
   - [x] Flexible metric aggregation (max, mean, sum, etc.)
   - [x] Advanced filtering by tags and properties
   - [x] Grouping and ordering capabilities
@@ -843,10 +844,12 @@ Here is an example of a GitHub Copilot response:
 | `manage_instana_resources`                                    | Application & Infrastructure   | Unified tool for managing application metrics, alert configs, settings, and catalog |
 | `manage_website_resources`                                    | Website Monitoring             | Unified smart router for website analyze, catalog, configuration, and advanced config operations |
 | `manage_custom_dashboards`                                    | Custom Dashboards              | Unified tool for managing custom dashboard CRUD operations |
-| `analyze_infrastructure_elicitation`                          | Infrastructure Analyze         | Two-pass infrastructure analysis with entity/metric elicitation |
+| `analyze_infrastructure`                                      | Infrastructure Analyze         | Two-pass infrastructure analysis with entity/metric elicitation |
 | `manage_automation`                                           | Automation                     | Unified smart router for automation: browse action catalog (get_actions, get_action_details, get_action_matches, get_action_types, get_action_tags) and view execution history (list, get_details) |
 | `manage_events_resources`                                     | Events                         | Unified smart router for events monitoring: get event by ID, get events by IDs, Kubernetes events, agent monitoring, issues, incidents, and changes |
-
+| `manage_slo`                                                  | SLO Management                 | Unified smart router for SLO configurations, reports, alerts, and correction windows with intelligent timezone handling |
+| `manage_slo`                                                  | SLO Management                 | Unified smart router for SLO configurations, reports, alerts, and correction windows with intelligent timezone handling |
+| `manage_releases`                                             | Release Management             | Unified smart router for release tracking: list releases with pagination and name filtering, get release details, create/update/delete releases with timezone support |
 
 ## Tool Filtering
 
@@ -866,8 +869,9 @@ The MCP server supports selective tool loading to optimize performance and reduc
   - Manages shareable users and API tokens for dashboards
 
 - **`infra`**: Infrastructure analysis tools
-  - `analyze_infrastructure_elicitation`: Two-pass infrastructure analysis with entity/metric elicitation
-  - Supports multiple entity types (JVM, Kubernetes, Docker, hosts, databases, etc.)
+  - `analyze_infrastructure`: Two-pass infrastructure analysis with entity/metric elicitation
+  - Dynamically supports all entity types available in your Instana installation (automatically loaded from API catalog)
+  - Includes JVM, Kubernetes, Docker, hosts, databases, message queues, and any custom or newly added entity types
   - Flexible metric aggregation, filtering, grouping, and time range queries
 
 - **`automation`**: Automation action tools
@@ -883,6 +887,24 @@ The MCP server supports selective tool loading to optimize performance and reduc
   - Website Catalog: Website metadata and definitions
   - Website Analyze: Website performance analysis
   - Website Configuration: Website configuration management
+
+- **`slo`**: Service Level Objective (SLO) management
+  - `manage_slo`: Unified smart router for comprehensive SLO operations
+  - **Configuration Management**: Create, read, update, delete SLO configurations with support for time-based and event-based indicators
+  - **Report Generation**: Generate detailed SLO reports with SLI values, error budgets, burn rates, and time-series charts
+  - **Alert Configuration**: Manage SLO alert configs for error budget monitoring and burn rate tracking
+  - **Correction Windows**: Create and manage maintenance windows to exclude planned downtime from SLO calculations
+  - **Intelligent Timezone Handling**: Automatic timezone elicitation for datetime inputs to ensure accurate time context
+  - **Two-Pass Elicitation**: Interactive parameter gathering for complex operations requiring multiple inputs
+
+- **`releases`**: Release tracking and deployment management
+  - `manage_releases`: Unified smart router for release operations
+  - **List Releases**: Get all releases with efficient pagination (page_number, page_size) and name-based filtering
+  - **Release Details**: Retrieve specific release information by ID including applications, services, and scopes
+  - **Create/Update/Delete**: Full CRUD operations for release management
+  - **Intelligent Timezone Handling**: Automatic timezone elicitation for release start times
+  - **Efficient Pagination**: Avoid redundant data fetching with proper page-based navigation
+  - **Name Filtering**: Case-insensitive substring matching to find releases by name
 
 ### Usage Examples
 
@@ -903,6 +925,9 @@ mcp-instana --tools events,website --transport streamable-http
 
 # Enable dashboard and router tools
 mcp-instana --tools dashboard,router --transport streamable-http
+
+# Enable releases and events tools
+mcp-instana --tools releases,events --transport streamable-http
 
 # Enable all tools (default behavior)
 mcp-instana --transport streamable-http
@@ -929,6 +954,9 @@ uv run src/core/server.py --tools events,website --transport streamable-http
 # Enable dashboard and router tools
 uv run src/core/server.py --tools dashboard,router --transport streamable-http
 
+# Enable releases and events tools
+uv run src/core/server.py --tools releases,events --transport streamable-http
+
 # Enable all tools (default behavior)
 uv run src/core/server.py --transport streamable-http
 
@@ -942,6 +970,67 @@ uv run src/core/server.py --list-tools
 - **Security**: Limit exposure to only necessary APIs
 - **Clarity**: Focus on specific use cases (e.g., only infrastructure monitoring)
 - **Resource Efficiency**: Lower CPU and network usage
+
+## SLO Management
+
+The SLO Management tool (`manage_slo`) provides comprehensive Service Level Objective management with intelligent routing to specialized handlers.
+
+### Available Resource Types
+
+- **configuration**: SLO definitions and targets
+  - Create, read, update, delete SLO configurations
+  - Support for time-based and event-based indicators
+  - Application and service scoping
+
+- **report**: Performance reports and metrics
+  - Generate detailed SLO reports with SLI values and error budgets
+  - Time-series charts and burn rate analysis
+  - Correction window exclusions
+
+- **alert**: Alert configurations for SLO violations
+  - Error budget monitoring and burn rate tracking
+  - Configurable thresholds and notification channels
+  - Enable/disable alert management
+
+- **correction**: Maintenance windows and corrections
+  - Planned downtime exclusions from SLO calculations
+  - Recurring maintenance schedules
+  - Active/inactive window management
+
+### Key Features
+
+- **Unified Interface**: Single tool for all SLO operations with consistent parameter structure
+- **Intelligent Timezone Handling**: Automatic timezone elicitation for datetime inputs (format: `"datetime|timezone"`)
+- **Two-Pass Elicitation**: Interactive parameter gathering for complex operations
+- **Resource Type Routing**: Intelligent routing to specialized clients based on resource type
+
+## Release Management
+
+The Release Management tool (`manage_releases`) provides release tracking and deployment management with efficient pagination and name-based filtering.
+
+### Available Operations
+
+- **get_all_releases**: List releases with pagination and filtering
+  - Supports time-range filtering (`var_from`, `to`)
+  - Name-based filtering with case-insensitive substring matching
+  - Efficient pagination with `page_number` and `page_size`
+  - Returns navigation metadata (`has_next_page`, `has_previous_page`, `total_pages`)
+
+- **get_release**: Get specific release details by ID
+
+- **create_release**: Create new release with applications and services
+
+- **update_release**: Update existing release configuration
+
+- **delete_release**: Delete a release by ID
+
+### Key Features
+
+- **Efficient Pagination**: Page-based navigation avoids redundant data fetching (replaces old `max_results` approach)
+- **Name Filtering**: Case-insensitive substring matching on release names
+- **Timezone Support**: Automatic timezone elicitation for datetime inputs
+- **Token Efficiency**: Fetch only needed data, reducing LLM context consumption
+
 
 ## Example Prompts
 
@@ -1153,6 +1242,160 @@ Results show beacon counts per page:
 - /home: 1,234 beacons
 - /products: 892 beacons
 - /cart: 456 beacons
+
+- **Query 12 (SLO Management)**
+```
+We need to set up SLO monitoring for our API service. Can you create an SLO configuration 
+that tracks 95% of requests completing within 200ms over a rolling 7-day window?
+```
+
+- **Result 12**
+```
+Using the manage_slo tool with:
+- resource_type: "configuration"
+- operation: "create"
+- params: {
+    "payload": {
+      "name": "API Latency SLO - 95% under 200ms",
+      "entity": {
+        "type": "application",
+        "applicationId": "app-api-service-123",
+        "boundaryScope": "ALL"
+      },
+      "indicator": {
+        "type": "timeBased",
+        "blueprint": "latency",
+        "threshold": 200,
+        "aggregation": "P95"
+      },
+      "target": 0.95,
+      "timeWindow": {
+        "type": "rolling",
+        "duration": 7,
+        "durationUnit": "day"
+      },
+      "tags": ["production", "api", "latency"]
+    }
+  }
+
+Successfully created SLO configuration with ID: slo-abc123
+The SLO will track that 95% of requests complete within 200ms over a rolling 7-day window.
+```
+
+- **Query 13 (SLO Reporting)**
+```
+I need to check how our API SLO performed last week. Can you generate a report 
+for SLO "slo-abc123" from March 10th to March 17th, 2026 in IST timezone?
+```
+
+- **Result 13**
+```
+Using the manage_slo tool with:
+- resource_type: "report"
+- operation: "get"
+- params: {
+    "slo_id": "slo-abc123",
+    "var_from": "10 March 2026, 12:00 AM|IST",
+    "to": "17 March 2026, 11:59 PM|IST"
+  }
+
+SLO Report for "API Latency SLO - 95% under 200ms":
+- Time Range: March 10-17, 2026 (IST)
+- SLI Value: 96.2% (Target: 95%)
+- Status: ✓ Meeting target
+- Error Budget:
+  * Total: 5.0%
+  * Remaining: 3.8%
+  * Spent: 1.2%
+- Burn Rate: 0.24x (healthy)
+- Violations: 2 brief periods of degraded performance
+```
+
+- **Query 14 (SLO Alert Configuration)**
+```
+We need to be alerted when our error budget is burning too fast. Can you create 
+a burn rate alert that triggers when the burn rate exceeds 2x over a 1-hour window?
+```
+
+- **Result 14**
+```
+Using the manage_slo tool with:
+- resource_type: "alert"
+- operation: "create"
+- params: {
+    "payload": {
+      "name": "High Burn Rate Alert - API SLO",
+      "description": "Alert when error budget burns faster than 2x",
+      "sloIds": ["slo-abc123"],
+      "rule": {
+        "alertType": "ERROR_BUDGET",
+        "metric": "BURN_RATE"
+      },
+      "severity": 10,
+      "alertChannelIds": ["slack-channel-ops"],
+      "timeThreshold": {
+        "expiry": 604800000,
+        "timeWindow": 604800000
+      },
+      "customPayloadFields": [
+        {
+          "type": "staticString",
+          "key": "team",
+          "value": "platform-ops"
+        }
+      ],
+      "threshold": {
+        "type": "staticThreshold",
+        "operator": ">=",
+        "value": 2.0
+      },
+      "burnRateTimeWindows": {
+        "longTimeWindow": {
+          "duration": 1,
+          "durationType": "hour"
+        },
+        "shortTimeWindow": {
+          "duration": 5,
+          "durationType": "minute"
+        }
+      }
+    }
+  }
+
+Successfully created alert configuration with ID: alert-def456
+The alert will trigger when burn rate exceeds 2x over a 1-hour window.
+```
+
+- **Query 15 (SLO Correction Windows)**
+```
+We have planned database maintenance on March 15th from 2 AM to 4 AM IST. 
+Can you create a correction window so this downtime doesn't count against our SLO?
+```
+
+- **Result 15**
+```
+Using the manage_slo tool with:
+- resource_type: "correction"
+- operation: "create"
+- params: {
+    "payload": {
+      "name": "Database Maintenance - March 15",
+      "scheduling": {
+        "duration": 2,
+        "durationUnit": "hour",
+        "startTime": "15 March 2026, 2:00 AM|IST"
+      },
+      "sloIds": ["slo-abc123"],
+      "description": "Planned database upgrade and optimization",
+      "tags": ["maintenance", "database"],
+      "active": true
+    }
+  }
+
+Successfully created correction window with ID: correction-xyz789
+The 2-hour maintenance window will be excluded from SLO calculations.
+Scheduled: March 15, 2026, 2:00 AM - 4:00 AM IST
+```
 ```
 
 - **Query 12 (Website Configuration)**

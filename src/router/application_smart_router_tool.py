@@ -212,7 +212,7 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             elif isinstance(params, str):
                 try:
                     params = json.loads(params)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
                     return {
                         "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
                         "resource_type": resource_type,

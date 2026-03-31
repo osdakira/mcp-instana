@@ -12,10 +12,11 @@ This tool implements the complete Option 2 flow:
 Key benefit: LLM never sees schema complexity, reducing tokens by 99.4%
 """
 
+import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 try:
     from instana_client.api.infrastructure_analyze_api import InfrastructureAnalyzeApi
@@ -93,7 +94,7 @@ class InfrastructureAnalyze(BaseInstanaClient):
         self,
         intent: Optional[str] = None,
         entity: Optional[str] = None,
-        selections: Optional[Dict[str, Any]] = None,
+        selections: Optional[Union[Dict[str, Any], str]] = None,
         ctx=None,
         api_client=None
     ) -> List[Any]:
@@ -132,6 +133,16 @@ class InfrastructureAnalyze(BaseInstanaClient):
         plugin catalog, ensuring compatibility with all monitored technologies without manual updates.
         """
         try:
+            # Handle case where FastMCP passes selections as a JSON string
+            if isinstance(selections, str):
+                try:
+                    selections = json.loads(selections)
+                except json.JSONDecodeError:
+                    return [TextContent(
+                        type="text",
+                        text=f"Invalid selections format: expected dict or valid JSON string, got: {selections}"
+                    )]
+
             # Route based on input
             if intent is not None and entity is not None:
                 # Pass 1: Intent → Elicitation

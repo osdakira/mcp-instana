@@ -48,7 +48,7 @@ class InfrastructureMetricsMCPTools(BaseInstanaClient):
                                          offline: Optional[StrictBool] = False,
                                          snapshot_ids: Optional[Union[str, List[str]]] = None,
                                          metrics: Optional[List[str]] = None,
-                                         time_frame: Optional[Dict[str, int]] = None,
+                                         time_frame: Optional[Union[Dict[str, int], str]] = None,
                                          rollup: Optional[int] = None,
                                          query: Optional[str] = None,
                                          plugin: Optional[str]=None,
@@ -75,6 +75,14 @@ class InfrastructureMetricsMCPTools(BaseInstanaClient):
         """
 
         try:
+            # Handle case where FastMCP passes time_frame as a JSON string
+            if isinstance(time_frame, str):
+                try:
+                    time_frame = json.loads(time_frame)
+                except json.JSONDecodeError:
+                    return {
+                        "error": f"Invalid time_frame format: expected dict or valid JSON string, got: {time_frame}"
+                    }
 
             # Two-Pass Elicitation: Check for required parameters
             elicitation_request = self._check_elicitation_for_infra_metrics(

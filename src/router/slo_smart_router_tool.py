@@ -5,6 +5,7 @@ This module provides a unified MCP tool that routes SLO (Service Level Objective
 queries to the appropriate specialized tools.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -144,7 +145,7 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
         self,
         resource_type: str,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
@@ -247,6 +248,17 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
         try:
             logger.debug(f"[manage_slo] Received: resource_type={resource_type}, operation={operation}")
 
+            # Handle case where FastMCP passes params as a JSON string
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "resource_type": resource_type,
+                        "operation": operation,
+                    }
+
             # Initialize params if not provided
             if params is None:
                 params = {}
@@ -261,14 +273,15 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
                 }
 
             # Route to the appropriate resource handler
+            # At this point, params is guaranteed to be Dict[str, Any] due to the JSON parsing above
             if resource_type == RESOURCE_TYPE_CONFIGURATION:
-                return await self._handle_configuration(operation, params, ctx)
+                return await self._handle_configuration(operation, params, ctx)  # type: ignore
             elif resource_type == RESOURCE_TYPE_REPORT:
-                return await self._handle_report(operation, params, ctx)
+                return await self._handle_report(operation, params, ctx)  # type: ignore
             elif resource_type == RESOURCE_TYPE_ALERT:
-                return await self._handle_alert(operation, params, ctx)
+                return await self._handle_alert(operation, params, ctx)  # type: ignore
             elif resource_type == RESOURCE_TYPE_CORRECTION:
-                return await self._handle_correction(operation, params, ctx)
+                return await self._handle_correction(operation, params, ctx)  # type: ignore
             else:
                 logger.error(f"[manage_slo] Unhandled resource_type: {resource_type}")
                 return {

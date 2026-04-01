@@ -120,7 +120,9 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             Get metric catalog: operation="get_metric_catalog"
 
         ANALYZE (resource_type="analyze"):
-            operations: get_all_traces
+            operations: get_all_traces, get_trace_details
+
+            get_all_traces:
             params: {payload}
 
             Payload parameters:
@@ -150,6 +152,28 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "pagination": {"retrievalSize": 200, "ingestionTime": 1725519793, "offset": 199}}}
 
             Note: Trace data saved to /tmp/instana_traces_{timestamp}.jsonl. Returns filePath, itemCount, fileSizeBytes, canLoadMore, totalHits, and cursor (ingestionTime, offset) if more data available. Use cursor values in pagination for next page.
+
+            get_trace_details:
+            params: {id, retrievalSize, offset, ingestionTime}
+
+            Parameters:
+            - id (required): Trace ID
+            - retrievalSize (optional): Number of records (1-10000)
+            - offset (optional): Records to skip from ingestionTime
+            - ingestionTime (optional): Starting point timestamp - can be provided as:
+                - Unix timestamp in seconds (e.g., 1725519793)
+                - Human-readable datetime string (e.g., "10 March 2026, 2:00 PM")
+                - Datetime with timezone (e.g., "10 March 2026, 2:00 PM|IST")
+                - If no timezone specified, UTC is assumed
+                Required if offset provided
+
+            Example:
+            params={"id": "trace-id-123", "retrievalSize": 100}
+
+            Pagination example:
+            params={"id": "trace-id-123", "retrievalSize": 100, "ingestionTime": 1725519793, "offset": 99}
+
+            Note: Trace details saved to /tmp/instana_trace_details_{id}_{timestamp}.jsonl. Returns filePath, itemCount, fileSizeBytes, canLoadMore, and cursor (ingestionTime, offset) if more data available.
 
         Args:
             resource_type: "metrics", "alert_config", "global_alert_config", "settings", "catalog", or "analyze"
@@ -575,7 +599,7 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
         self, operation: str, params: Dict[str, Any], ctx
     ) -> Dict[str, Any]:
         """Handle Application Analyze operations."""
-        valid_operations = ["get_all_traces"]
+        valid_operations = ["get_all_traces", "get_trace_details"]
 
         if operation not in valid_operations:
             return {
@@ -604,6 +628,25 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
 
                     # Update the field with converted timestamp
                     time_frame["to"] = result["timestamp"]
+
+        # Handle datetime string conversion for ingestionTime in get_trace_details
+        if operation == "get_trace_details" and "ingestionTime" in params:
+            ingestion_time = params["ingestionTime"]
+
+            if isinstance(ingestion_time, str):
+                result = self._convert_datetime_field(
+                    ingestion_time,
+                    "ingestionTime",
+                    "analyze",
+                    operation
+                )
+
+                # Check if conversion failed
+                if "error" in result:
+                    return result
+
+                # Update with converted timestamp (milliseconds)
+                params["ingestionTime"] = result["timestamp"]
 
         # Route to the analyze client with params
         result = await self.app_analyze_client.execute_analyze_operation(

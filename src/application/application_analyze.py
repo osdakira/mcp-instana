@@ -70,8 +70,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         Called by the smart router tool.
 
         Args:
-            operation: Operation to perform (get_all_traces)
-            params: Dictionary containing 'payload'
+            operation: Operation to perform (get_all_traces, get_trace_details)
+            params: Dictionary containing operation-specific parameters
             ctx: MCP context
 
         Returns:
@@ -81,6 +81,14 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             if operation == "get_all_traces":
                 payload = params.get('payload')
                 return await self.get_all_traces(payload, ctx=ctx)
+            elif operation == "get_trace_details":
+                return await self.get_trace_details(
+                    id=params.get('id'),
+                    retrievalSize=params.get('retrievalSize'),
+                    offset=params.get('offset'),
+                    ingestionTime=params.get('ingestionTime'),
+                    ctx=ctx
+                )
             else:
                 return {"error": f"Operation '{operation}' not supported"}
 
@@ -145,65 +153,99 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     #     title="Get Trace Details",
     #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
     # )
-    # @with_header_auth(ApplicationAnalyzeApi)
-    # async def get_trace_details(
-    #     self,
-    #     id: str,
-    #     retrievalSize: Optional[int] = None,
-    #     offset: Optional[int] = None,
-    #     ingestionTime: Optional[int] = None,
-    #     ctx=None,
-    #     api_client=None
-    # ) -> Dict[str, Any]:
-    #     """
-    #     Get details of a specific trace.
-    #     This tool is to retrive comprehensive details of a particular trace.
-    #     Args:
-    #         id (str): The ID of the trace.
-    #         retrievalSize (Optional[int]):The number of records to retrieve in a single request.
-    #                                     Minimum value is 1 and maximum value is 10000.
-    #         offset (Optional[int]): The number of records to be skipped from the ingestionTime.
-    #         ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
-    #         ctx: Optional context for the request.
-    #     Returns:
-    #         Dict[str, Any]: Details of the specified trace.
-    #     """
+    @with_header_auth(ApplicationAnalyzeApi)
+    async def get_trace_details(
+        self,
+        id: str,
+        retrievalSize: Optional[int] = None,
+        offset: Optional[int] = None,
+        ingestionTime: Optional[int] = None,
+        ctx=None,
+        api_client=None
+    ) -> Dict[str, Any]:
+        """
+        Get details of a specific trace.
+        This tool is to retrive comprehensive details of a particular trace.
+        Args:
+            id (str): The ID of the trace.
+            retrievalSize (Optional[int]):The number of records to retrieve in a single request.
+                                        Minimum value is 1 and maximum value is 10000.
+            offset (Optional[int]): The number of records to be skipped from the ingestionTime.
+            ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
+            ctx: Optional context for the request.
+        Returns:
+            Dict containing filePath, itemCount, fileSizeBytes, canLoadMore,
+            and cursor fields (ingestionTime, offset) if more data available
+        """
+        output_path = None
+        try:
+            if not id:
+                logger.warning("Trace ID must be provided")
+                return {"error": "Trace ID must be provided"}
 
-    #     try:
-    #         if not id:
-    #             logger.warning("Trace ID must be provided")
-    #             return {"error": "Trace ID must be provided"}
+            if offset is not None and ingestionTime is None:
+                logger.warning("If offset is provided, ingestionTime must also be provided")
+                return {"error": "If offset is provided, ingestionTime must also be provided"}
 
-    #         if offset is not None and ingestionTime is None:
-    #             logger.warning("If offset is provided, ingestionTime must also be provided")
-    #             return {"error": "If offset is provided, ingestionTime must also be provided"}
+            if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
+                logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
+                return {"error": "retrievalSize must be between 1 and 10000"}
 
-    #         if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
-    #             logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
-    #             return {"error": "retrievalSize must be between 1 and 10000"}
+            # Prepare output path
+            timestamp = int(datetime.now().timestamp())
+            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            output_path = f"{output_dir}/instana_trace_details_{id}_{timestamp}.jsonl"
 
-    #         logger.debug(f"Fetching trace details for id={id}")
-    #         result = api_client.get_trace_download(
-    #             id=id,
-    #             retrieval_size=retrievalSize,
-    #             offset=offset,
-    #             ingestion_time=ingestionTime
-    #         )
+            logger.debug(f"Fetching trace details for id={id}")
+            result = api_client.get_trace_download(
+                id=id,
+                retrieval_size=retrievalSize,
+                offset=offset,
+                ingestion_time=ingestionTime
+            )
 
-    #         # Convert the result to a dictionary
-    #         if hasattr(result, 'to_dict'):
-    #             result_dict = result.to_dict()
-    #         else:
-    #             # If it's already a dict or another format, use it as is
-    #             result_dict = result
+            # Convert the result to a dictionary
+            if hasattr(result, 'to_dict'):
+                result_dict = result.to_dict()
+            else:
+                # If it's already a dict or another format, use it as is
+                result_dict = result
 
-    #         logger.debug(f"Result from get_trace_details: {result_dict}")
-    #         # Ensure we return a dictionary
-    #         return dict(result_dict) if not isinstance(result_dict, dict) else result_dict
+            logger.debug(f"Result from get_trace_details: {result_dict}")
 
-    #     except Exception as e:
-    #         logger.error(f"Error getting trace details: {e}", exc_info=True)
-    #         return {"error": f"Failed to get trace details: {e!s}"}
+            items = result_dict.get("items", [])
+            can_load_more = result_dict.get("canLoadMore", False)
+
+            # Write items to JSONL file
+            with open(output_path, 'w') as f:
+                for item in items:
+                    f.write(json.dumps(item) + '\n')
+
+            file_size = Path(output_path).stat().st_size if Path(output_path).exists() else 0
+
+            # Build response
+            response = {
+                "filePath": output_path,
+                "itemCount": len(items),
+                "fileSizeBytes": file_size,
+                "canLoadMore": can_load_more
+            }
+
+            # Add cursor fields if more data available
+            if items and can_load_more and "cursor" in items[-1]:
+                cursor = items[-1]["cursor"]
+                if "ingestionTime" in cursor:
+                    response["ingestionTime"] = cursor["ingestionTime"]
+                if "offset" in cursor:
+                    response["offset"] = cursor["offset"]
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error getting trace details: {e}", exc_info=True)
+            if output_path and Path(output_path).exists():
+                Path(output_path).unlink()
+            return {"error": f"Failed to get trace details: {e!s}"}
 
 
     # @register_as_tool decorator commented out - not exposed as MCP tool

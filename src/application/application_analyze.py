@@ -85,9 +85,9 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             elif operation == "get_trace_details":
                 return await self.get_trace_details(
                     id=params.get('id'),
-                    retrievalSize=params.get('retrievalSize'),
+                    retrieval_size=params.get('retrievalSize'),
                     offset=params.get('offset'),
-                    ingestionTime=params.get('ingestionTime'),
+                    ingestion_time=params.get('ingestionTime'),
                     ctx=ctx
                 )
             else:
@@ -154,13 +154,44 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     #     title="Get Trace Details",
     #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
     # )
+    def _validate_trace_details_params(self, id: str, retrieval_size: Optional[int], offset: Optional[int], ingestion_time: Optional[int]) -> Optional[Dict[str, Any]]:
+        """Validate parameters for get_trace_details."""
+        if not id:
+            logger.warning("Trace ID must be provided")
+            return {"error": "Trace ID must be provided"}
+
+        if offset is not None and ingestion_time is None:
+            logger.warning("If offset is provided, ingestion_time must also be provided")
+            return {"error": "If offset is provided, ingestion_time must also be provided"}
+
+        if retrieval_size is not None and (retrieval_size < 1 or retrieval_size > 10000):
+            logger.warning(f"retrieval_size must be between 1 and 10000, got: {retrieval_size}")
+            return {"error": "retrieval_size must be between 1 and 10000"}
+
+        return None
+
+    def _write_trace_items_to_file(self, items: list, output_path: str) -> None:
+        """Write trace items to JSONL file."""
+        with open(output_path, 'w') as f:
+            for item in items:
+                f.write(json.dumps(item) + '\n')
+
+    def _add_cursor_to_response(self, response: Dict[str, Any], items: list, can_load_more: bool) -> None:
+        """Add cursor fields to response if more data available."""
+        if items and can_load_more and "cursor" in items[-1]:
+            cursor = items[-1]["cursor"]
+            if "ingestionTime" in cursor:
+                response["ingestionTime"] = cursor["ingestionTime"]
+            if "offset" in cursor:
+                response["offset"] = cursor["offset"]
+
     @with_header_auth(ApplicationAnalyzeApi)
     async def get_trace_details(
         self,
         id: str,
-        retrievalSize: Optional[int] = None,
+        retrieval_size: Optional[int] = None,
         offset: Optional[int] = None,
-        ingestionTime: Optional[int] = None,
+        ingestion_time: Optional[int] = None,
         ctx: Optional[Context] = None,
         api_client: Any = None
     ) -> Dict[str, Any]:
@@ -169,58 +200,45 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         This tool is to retrive comprehensive details of a particular trace.
         Args:
             id (str): The ID of the trace.
-            retrievalSize (Optional[int]):The number of records to retrieve in a single request.
+            retrieval_size (Optional[int]):The number of records to retrieve in a single request.
                                         Minimum value is 1 and maximum value is 10000.
-            offset (Optional[int]): The number of records to be skipped from the ingestionTime.
-            ingestionTime (Optional[int]): The timestamp indicating the starting point from which data was ingested.
+            offset (Optional[int]): The number of records to be skipped from the ingestion_time.
+            ingestion_time (Optional[int]): The timestamp indicating the starting point from which data was ingested.
             ctx: Optional context for the request.
         Returns:
             Dict containing filePath, itemCount, fileSizeBytes, canLoadMore,
-            and cursor fields (ingestionTime, offset) if more data available
+            and cursor fields (ingestion_time, offset) if more data available
         """
         output_path = None
         try:
-            if not id:
-                logger.warning("Trace ID must be provided")
-                return {"error": "Trace ID must be provided"}
-
-            if offset is not None and ingestionTime is None:
-                logger.warning("If offset is provided, ingestionTime must also be provided")
-                return {"error": "If offset is provided, ingestionTime must also be provided"}
-
-            if retrievalSize is not None and (retrievalSize < 1 or retrievalSize > 10000):
-                logger.warning(f"retrievalSize must be between 1 and 10000, got: {retrievalSize}")
-                return {"error": "retrievalSize must be between 1 and 10000"}
+            # Validate parameters
+            validation_error = self._validate_trace_details_params(id, retrieval_size, offset, ingestion_time)
+            if validation_error:
+                return validation_error
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
             output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
             output_path = f"{output_dir}/instana_trace_details_{id}_{timestamp}.jsonl"
 
+            # Fetch trace details
             logger.debug(f"Fetching trace details for id={id}")
             result = api_client.get_trace_download(
                 id=id,
-                retrieval_size=retrievalSize,
+                retrieval_size=retrieval_size,
                 offset=offset,
-                ingestion_time=ingestionTime
+                ingestion_time=ingestion_time
             )
 
-            # Convert the result to a dictionary
-            if hasattr(result, 'to_dict'):
-                result_dict = result.to_dict()
-            else:
-                # If it's already a dict or another format, use it as is
-                result_dict = result
-
+            # Convert result to dictionary
+            result_dict = result.to_dict() if hasattr(result, 'to_dict') else result
             logger.debug(f"Result from get_trace_details: {result_dict}")
 
             items = result_dict.get("items", [])
             can_load_more = result_dict.get("canLoadMore", False)
 
-            # Write items to JSONL file
-            with open(output_path, 'w') as f:
-                for item in items:
-                    f.write(json.dumps(item) + '\n')
+            # Write items to file
+            self._write_trace_items_to_file(items, output_path)
 
             file_size = Path(output_path).stat().st_size if Path(output_path).exists() else 0
 
@@ -232,13 +250,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                 "canLoadMore": can_load_more
             }
 
-            # Add cursor fields if more data available
-            if items and can_load_more and "cursor" in items[-1]:
-                cursor = items[-1]["cursor"]
-                if "ingestionTime" in cursor:
-                    response["ingestionTime"] = cursor["ingestionTime"]
-                if "offset" in cursor:
-                    response["offset"] = cursor["offset"]
+            # Add cursor fields if available
+            self._add_cursor_to_response(response, items, can_load_more)
 
             return response
 
@@ -249,11 +262,58 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             return {"error": f"Failed to get trace details: {e!s}"}
 
 
-    # @register_as_tool decorator commented out - not exposed as MCP tool
-    # @register_as_tool(
-    #     title="Get All Traces",
-    #     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
-    # )
+    def _parse_traces_payload(self, payload: Optional[Union[Dict[str, Any], str]]) -> Union[Dict[str, Any], Dict[str, str]]:
+        """Parse payload string to dictionary."""
+        if not isinstance(payload, str):
+            return payload if payload is not None else {}
+
+        logger.debug("Payload is a string, attempting to parse")
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            try:
+                return json.loads(payload.replace("'", "\""))
+            except json.JSONDecodeError:
+                import ast
+                try:
+                    return ast.literal_eval(payload)
+                except (SyntaxError, ValueError) as e:
+                    return {"error": f"Invalid payload format: {e}"}
+
+    def _write_traces_to_file(self, items: List[Dict[str, Any]], output_path: str) -> int:
+        """Write trace items to JSONL file and return file size."""
+        with open(output_path, 'w') as f:
+            for item in items:
+                f.write(json.dumps(item) + '\n')
+        return Path(output_path).stat().st_size if Path(output_path).exists() else 0
+
+    def _build_traces_response(
+        self,
+        output_path: str,
+        items: List[Dict[str, Any]],
+        file_size: int,
+        can_load_more: bool,
+        total_hits: Optional[int]
+    ) -> Dict[str, Any]:
+        """Build response dictionary with trace information."""
+        response = {
+            "filePath": output_path,
+            "itemCount": len(items),
+            "fileSizeBytes": file_size,
+            "canLoadMore": can_load_more,
+            "totalHits": total_hits
+        }
+
+        # Add cursor fields if more data available
+        if items and can_load_more and "cursor" in items[-1]:
+            cursor = items[-1]["cursor"]
+            if "ingestionTime" in cursor:
+                response["ingestionTime"] = cursor["ingestionTime"]
+            if "offset" in cursor:
+                response["offset"] = cursor["offset"]
+
+        return response
+
     @with_header_auth(ApplicationAnalyzeApi)
     async def get_all_traces(
         self,
@@ -311,23 +371,12 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             Dict containing filePath, itemCount, fileSizeBytes, canLoadMore, totalHits,
             and cursor fields (ingestionTime, offset) if more data available
         """
+        output_path = None
         try:
-            # Parse the payload if it's a string
-            if isinstance(payload, str):
-                logger.debug("Payload is a string, attempting to parse")
-                try:
-                    request_body = json.loads(payload)
-                except json.JSONDecodeError:
-                    try:
-                        request_body = json.loads(payload.replace("'", "\""))
-                    except json.JSONDecodeError:
-                        import ast
-                        try:
-                            request_body = ast.literal_eval(payload)
-                        except (SyntaxError, ValueError) as e:
-                            return {"error": f"Invalid payload format: {e}"}
-            else:
-                request_body = payload if payload is not None else {}
+            # Parse the payload
+            request_body = self._parse_traces_payload(payload)
+            if "error" in request_body:
+                return request_body
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
@@ -341,36 +390,16 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Write items to JSONL file
             items = result_dict.get("items", [])
-            with open(output_path, 'w') as f:
-                for item in items:
-                    f.write(json.dumps(item) + '\n')
-            file_size = Path(output_path).stat().st_size if Path(output_path).exists() else 0
+            file_size = self._write_traces_to_file(items, output_path)
 
+            # Build and return response
             can_load_more = result_dict.get("canLoadMore", False)
             total_hits = result_dict.get("totalHits")
-
-            # Build response
-            response = {
-                "filePath": output_path,
-                "itemCount": len(items),
-                "fileSizeBytes": file_size,
-                "canLoadMore": can_load_more,
-                "totalHits": total_hits
-            }
-
-            # Add cursor fields if more data available
-            if items and can_load_more and "cursor" in items[-1]:
-                cursor = items[-1]["cursor"]
-                if "ingestionTime" in cursor:
-                    response["ingestionTime"] = cursor["ingestionTime"]
-                if "offset" in cursor:
-                    response["offset"] = cursor["offset"]
-
-            return response
+            return self._build_traces_response(output_path, items, file_size, can_load_more, total_hits)
 
         except Exception as e:
             logger.error(f"Error in get_traces: {e}", exc_info=True)
-            if Path(output_path).exists():
+            if output_path and Path(output_path).exists():
                 Path(output_path).unlink()
             return {"error": f"Failed to get traces: {e!s}"}
 

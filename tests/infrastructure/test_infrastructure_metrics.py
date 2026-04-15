@@ -3,6 +3,7 @@ Unit tests for the InfrastructureMetricsMCPTools class
 """
 
 import asyncio
+import importlib
 import logging
 import sys
 import traceback
@@ -61,13 +62,14 @@ sys.modules['instana_client.api_client'].ApiClient = mock_api_client
 sys.modules['instana_client.api.infrastructure_metrics_api'].InfrastructureMetricsApi = mock_metrics_api
 sys.modules['instana_client.models.get_combined_metrics'].GetCombinedMetrics = mock_combined_metrics
 
-# Patch the with_header_auth decorator
-with patch('src.core.utils.with_header_auth', mock_with_header_auth):
-    # Also patch the GetCombinedMetrics import in the source module
-    with patch('src.infrastructure.infrastructure_metrics.GetCombinedMetrics', mock_combined_metrics):
-        # Import the class to test
-        from src.infrastructure.infrastructure_metrics import (
-            InfrastructureMetricsMCPTools,
+def create_infrastructure_metrics_client(read_token: str, base_url: str):
+    with patch('src.core.utils.with_header_auth', mock_with_header_auth):
+        module = importlib.import_module('src.infrastructure.infrastructure_metrics')
+        module = importlib.reload(module)
+        module.GetCombinedMetrics = mock_combined_metrics
+        return module.InfrastructureMetricsMCPTools(
+            read_token=read_token,
+            base_url=base_url,
         )
 
 class TestInfrastructureMetricsMCPTools(unittest.TestCase):
@@ -90,7 +92,10 @@ class TestInfrastructureMetricsMCPTools(unittest.TestCase):
         # Create the client
         self.read_token = "test_token"
         self.base_url = "https://test.instana.io"
-        self.client = InfrastructureMetricsMCPTools(read_token=self.read_token, base_url=self.base_url)
+        self.client = create_infrastructure_metrics_client(
+            read_token=self.read_token,
+            base_url=self.base_url,
+        )
 
         # Set up the client's API attribute
         self.client.metrics_api = mock_metrics_api

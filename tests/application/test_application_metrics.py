@@ -107,6 +107,24 @@ class MockBaseInstanaClient:
         self.read_token = read_token
         self.base_url = base_url
 
+    def get_headers(self, auth_token=None, csrf_token=None):
+        """Mock get_headers method"""
+        headers = {
+            "Authorization": f"apiToken {self.read_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "MCP-server/0.8.1"
+        }
+        if auth_token and csrf_token:
+            headers["X-CSRF-TOKEN"] = csrf_token
+            headers["Cookie"] = f"instanaAuthToken={auth_token}"
+            del headers["Authorization"]
+        return headers
+
+    async def make_request(self, endpoint, params=None, method="GET", json=None):
+        """Mock make_request method"""
+        return {"data": "mock_response"}
+
 
 mock_src_core_utils.BaseInstanaClient = MockBaseInstanaClient
 mock_src_core_utils.register_as_tool = lambda *args, **kwargs: lambda func: func
@@ -136,11 +154,28 @@ _mocks = {
 }
 
 # Import the class under test with sys.modules mocked.
-# patch.dict restores sys.modules after the with-block exits, so other
-# test modules (tests/core/, tests/prompts/) can import the real modules.
-with patch.dict(sys.modules, _mocks):
-    with patch('src.core.utils.with_header_auth', mock_with_header_auth):
-        from src.application.application_metrics import ApplicationMetricsMCPTools
+# Save original modules before mocking
+_original_modules = {}
+for module_name in _mocks:
+    if module_name in sys.modules:
+        _original_modules[module_name] = sys.modules[module_name]
+
+# Apply mocks
+for module_name, mock_obj in _mocks.items():
+    sys.modules[module_name] = mock_obj
+
+# Import with decorator patched
+with patch('src.core.utils.with_header_auth', mock_with_header_auth):
+    from src.application.application_metrics import ApplicationMetricsMCPTools
+
+# Clean up mocks from sys.modules to prevent interference with other tests
+for module_name in _mocks:
+    if module_name in _original_modules:
+        # Restore original module
+        sys.modules[module_name] = _original_modules[module_name]
+    elif module_name in sys.modules:
+        # Remove mock if there was no original
+        del sys.modules[module_name]
 
 
 class TestApplicationMetricsMCPTools(unittest.TestCase):
@@ -245,6 +280,205 @@ class TestApplicationMetricsMCPTools(unittest.TestCase):
         ))
 
         self.assertEqual(result, {"metrics": "test_data"})
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_with_items(self, mock_logger):
+        """Test that logging works correctly when result has items with metrics"""
+        mock_result = MagicMock()
+        mock_result.to_dict = MagicMock(return_value={
+            "items": [
+                {
+                    "metrics": {
+                        "calls": {
+                            "values": [[1000, 10], [2000, 20], [3000, 30]],
+                            "aggregation": "SUM"
+                        }
+                    }
+                },
+                {
+                    "metrics": {
+                        "errors": {
+                            "values": [[1000, 1], [2000, 2]],
+                            "aggregation": "SUM"
+                        }
+                    }
+                }
+            ]
+        })
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "calls", "aggregation": "SUM"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify logging was called
+        self.assertTrue(mock_logger.info.called)
+        # Check that it logged the number of items
+        log_calls = [str(call) for call in mock_logger.info.call_args_list]
+        self.assertTrue(any("Number of items: 2" in str(call) for call in log_calls))
+        # Check that it logged metric information
+        self.assertTrue(any("calls" in str(call) for call in log_calls))
+        # Check that it logged the sum
+        self.assertTrue(any("SUM of all data points: 60" in str(call) for call in log_calls))
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_with_single_values(self, mock_logger):
+        """Test logging when metric values are single numbers instead of [timestamp, value] pairs"""
+        mock_result = MagicMock()
+        mock_result.to_dict = MagicMock(return_value={
+            "items": [
+                {
+                    "metrics": {
+                        "calls": {
+                            "values": [10, 20, 30],  # Single values instead of pairs
+                            "aggregation": "AVG"
+                        }
+                    }
+                }
+            ]
+        })
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "calls", "aggregation": "AVG"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify logging was called
+        self.assertTrue(mock_logger.info.called)
+        # Check that it logged the sum (10 + 20 + 30 = 60)
+        log_calls = [str(call) for call in mock_logger.info.call_args_list]
+        self.assertTrue(any("SUM of all data points: 60" in str(call) for call in log_calls))
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_with_non_numeric_values(self, mock_logger):
+        """Test logging handles non-numeric values gracefully"""
+        mock_result = MagicMock()
+        mock_result.to_dict = MagicMock(return_value={
+            "items": [
+                {
+                    "metrics": {
+                        "status": {
+                            "values": ["OK", "ERROR", "OK"],  # Non-numeric values
+                            "aggregation": "DISTINCT_COUNT"
+                        }
+                    }
+                }
+            ]
+        })
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "status", "aggregation": "DISTINCT_COUNT"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify logging was called and didn't crash
+        self.assertTrue(mock_logger.info.called)
+        # Should not have logged a sum since values are non-numeric
+        [str(call) for call in mock_logger.info.call_args_list]
+        # The sum logging should have been skipped due to TypeError/ValueError
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_with_empty_values(self, mock_logger):
+        """Test logging when metric values list is empty"""
+        mock_result = MagicMock()
+        mock_result.to_dict = MagicMock(return_value={
+            "items": [
+                {
+                    "metrics": {
+                        "calls": {
+                            "values": [],  # Empty values list
+                            "aggregation": "SUM"
+                        }
+                    }
+                }
+            ]
+        })
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "calls", "aggregation": "SUM"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify logging was called
+        self.assertTrue(mock_logger.info.called)
+        # Check that it logged 0 data points
+        log_calls = [str(call) for call in mock_logger.info.call_args_list]
+        self.assertTrue(any("Number of data points: 0" in str(call) for call in log_calls))
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_without_items(self, mock_logger):
+        """Test logging when result doesn't have items key"""
+        mock_result = MagicMock()
+        mock_result.to_dict = MagicMock(return_value={
+            "data": "some_other_format"
+        })
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "calls", "aggregation": "SUM"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify basic logging was called but not item-specific logging
+        self.assertTrue(mock_logger.info.called)
+        log_calls = [str(call) for call in mock_logger.info.call_args_list]
+        # Should not have logged "Number of items" since there's no items key
+        self.assertFalse(any("Number of items:" in str(call) for call in log_calls))
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_metric_without_values(self, mock_logger):
+        """Test logging when metric doesn't have values key"""
+        mock_result = MagicMock()
+        mock_result.to_dict = MagicMock(return_value={
+            "items": [
+                {
+                    "metrics": {
+                        "calls": {
+                            "aggregation": "SUM"
+                            # No 'values' key
+                        }
+                    }
+                }
+            ]
+        })
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "calls", "aggregation": "SUM"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify logging was called
+        self.assertTrue(mock_logger.info.called)
+        # Should have logged aggregation but not values
+        log_calls = [str(call) for call in mock_logger.info.call_args_list]
+        self.assertTrue(any("Aggregation: SUM" in str(call) for call in log_calls))
+
+    @patch('src.application.application_metrics.logger')
+    def test_get_application_data_metrics_v2_logging_first_three_items_only(self, mock_logger):
+        """Test that logging only processes first 3 items even if more exist"""
+        mock_result = MagicMock()
+        items = [{"metrics": {"calls": {"values": [[i*1000, i]]}}} for i in range(10)]
+        mock_result.to_dict = MagicMock(return_value={"items": items})
+        self.client.metrics_api.get_application_data_metrics_v2 = MagicMock(return_value=mock_result)
+
+        asyncio.run(self.client.get_application_data_metrics_v2(
+            metrics=[{"metric": "calls", "aggregation": "SUM"}],
+            time_frame={"from": 1000, "to": 2000}
+        ))
+
+        # Verify it logged 10 items total
+        log_calls = [str(call) for call in mock_logger.info.call_args_list]
+        self.assertTrue(any("Number of items: 10" in str(call) for call in log_calls))
+        # But only logged details for items 0, 1, 2 (not 3+)
+        self.assertTrue(any("Item 0:" in str(call) for call in log_calls))
+        self.assertTrue(any("Item 1:" in str(call) for call in log_calls))
+        self.assertTrue(any("Item 2:" in str(call) for call in log_calls))
+        self.assertFalse(any("Item 3:" in str(call) for call in log_calls))
 
 
 if __name__ == '__main__':

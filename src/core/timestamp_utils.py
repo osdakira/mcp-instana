@@ -7,8 +7,9 @@ Unix epoch timestamps (milliseconds) for use with Instana APIs.
 """
 
 import logging
+from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -278,3 +279,314 @@ def get_current_timestamp(
     except Exception as e:
         logger.error(f"Error getting current timestamp: {e}", exc_info=True)
         return {"error": str(e)}
+
+
+def convert_datetime_param(
+    param_value: Any,
+    param_name: str,
+    default_timezone: str = "UTC",
+    output_unit: str = "milliseconds"
+) -> Dict[str, Any]:
+    """
+    Convert a datetime parameter value to timestamp if it's a string.
+
+    This utility function handles the common pattern of converting datetime strings
+    to timestamps while preserving numeric values unchanged.
+
+    Args:
+        param_value: The parameter value (can be int, str, or None)
+        param_name: Name of the parameter (for error messages)
+        default_timezone: Default timezone if not specified in string (default: "UTC")
+        output_unit: Output unit for timestamp (default: "milliseconds")
+
+    Returns:
+        Dictionary with:
+        - "value": Converted timestamp (int) or original value
+        - "converted": Boolean indicating if conversion occurred
+        - "error": Error message if conversion failed (optional)
+        - "timezone": Timezone used for conversion (if converted)
+
+    Examples:
+        # Numeric value (no conversion)
+        result = convert_datetime_param(1234567890000, "to")
+        # Returns: {"value": 1234567890000, "converted": False}
+
+        # Datetime string with timezone
+        result = convert_datetime_param("19 March 2026, 2:47 PM|IST", "to")
+        # Returns: {"value": 1742369820000, "converted": True, "timezone": "IST"}
+
+        # Datetime string without timezone (uses default)
+        result = convert_datetime_param("19 March 2026, 2:47 PM", "to")
+        # Returns: {"value": 1742351220000, "converted": True, "timezone": "UTC"}
+    """
+    # If None or already numeric, return as-is
+    if param_value is None or isinstance(param_value, (int, float)):
+        return {"value": param_value, "converted": False}
+
+    # If not a string, return as-is
+    if not isinstance(param_value, str):
+        return {"value": param_value, "converted": False}
+
+    # It's a string - attempt datetime conversion
+    logger.debug(f"Converting {param_name} datetime string: {param_value}")
+
+    # Extract timezone if provided, otherwise use default
+    if "|" in param_value:
+        datetime_str, timezone = param_value.split("|", 1)
+        timezone = timezone.strip()
+    else:
+        datetime_str = param_value
+        timezone = default_timezone
+        logger.info(f"No timezone provided for {param_name} '{param_value}', using {default_timezone}")
+
+    # Convert to timestamp
+    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone, output_unit)
+
+    if "error" in conversion_result:
+        return {
+            "error": f"Failed to convert {param_name} datetime: {conversion_result['error']}",
+            "value": None,
+            "converted": False
+        }
+
+    logger.info(f"Converted {param_name} to timestamp: {conversion_result['timestamp']} (timezone: {timezone})")
+    return {
+        "value": conversion_result["timestamp"],
+        "converted": True,
+        "timezone": timezone
+    }
+
+
+def convert_datetime_params(
+    params: Dict[str, Any],
+    param_names: List[str],
+    default_timezone: str = "UTC",
+    output_unit: str = "milliseconds"
+) -> Dict[str, Any]:
+    """
+    Convert multiple datetime parameters in a dictionary.
+
+    This utility function processes multiple parameters at once, converting
+    datetime strings to timestamps while preserving numeric values.
+
+    Args:
+        params: Dictionary containing parameters
+        param_names: List of parameter names to convert
+        default_timezone: Default timezone if not specified (default: "UTC")
+        output_unit: Output unit for timestamps (default: "milliseconds")
+
+    Returns:
+        Dictionary with:
+        - "params": Updated params dictionary with converted values
+        - "conversions": Dict mapping param names to conversion info
+        - "error": Error message if any conversion failed (optional)
+
+    Examples:
+        # Convert multiple time parameters
+        params = {"from_time": "19 March 2026, 2:47 PM|IST", "to_time": 1234567890000}
+        result = convert_datetime_params(params, ["from_time", "to_time"])
+        # Returns: {
+        #     "params": {"from_time": 1742369820000, "to_time": 1234567890000},
+        #     "conversions": {
+        #         "from_time": {"converted": True, "timezone": "IST"},
+        #         "to_time": {"converted": False}
+        #     }
+        # }
+    """
+    updated_params = params.copy()
+    conversions = {}
+
+    for param_name in param_names:
+        if param_name not in params:
+            continue
+
+        param_value = params[param_name]
+        conversion_result = convert_datetime_param(
+            param_value,
+            param_name,
+            default_timezone,
+            output_unit
+        )
+
+        # Check for conversion error
+        if "error" in conversion_result:
+            return {
+                "error": conversion_result["error"],
+                "param_name": param_name,
+                "params": params
+            }
+
+        # Update the parameter value
+        updated_params[param_name] = conversion_result["value"]
+
+        # Store conversion info
+        conversions[param_name] = {
+            "converted": conversion_result["converted"],
+            "timezone": conversion_result.get("timezone")
+        }
+
+    return {
+        "params": updated_params,
+        "conversions": conversions
+    }
+
+
+def convert_nested_datetime_param(
+    params: Dict[str, Any],
+    parent_key: str,
+    nested_key: str,
+    default_timezone: str = "UTC",
+    output_unit: str = "milliseconds"
+) -> Dict[str, Any]:
+    """
+    Convert a datetime parameter nested within a dictionary.
+
+    This utility handles the common pattern of time_frame.to or similar nested structures.
+
+    Args:
+        params: Dictionary containing parameters
+        parent_key: Key of the parent dictionary (e.g., "time_frame")
+        nested_key: Key within the parent dictionary (e.g., "to")
+        default_timezone: Default timezone if not specified (default: "UTC")
+        output_unit: Output unit for timestamp (default: "milliseconds")
+
+    Returns:
+        Dictionary with:
+        - "params": Updated params dictionary with converted value
+        - "converted": Boolean indicating if conversion occurred
+        - "error": Error message if conversion failed (optional)
+        - "timezone": Timezone used for conversion (if converted)
+
+    Examples:
+        # Convert time_frame.to
+        params = {"time_frame": {"to": "19 March 2026, 2:47 PM|IST", "windowSize": 3600000}}
+        result = convert_nested_datetime_param(params, "time_frame", "to")
+        # Returns: {
+        #     "params": {"time_frame": {"to": 1742369820000, "windowSize": 3600000}},
+        #     "converted": True,
+        #     "timezone": "IST"
+        # }
+    """
+    # Check if parent key exists and is a dict
+    if parent_key not in params or not isinstance(params[parent_key], dict):
+        return {"params": params, "converted": False}
+
+    parent_dict = params[parent_key]
+
+    # Check if nested key exists
+    if nested_key not in parent_dict:
+        return {"params": params, "converted": False}
+
+    nested_value = parent_dict[nested_key]
+
+    # Convert the nested value
+    conversion_result = convert_datetime_param(
+        nested_value,
+        f"{parent_key}.{nested_key}",
+        default_timezone,
+        output_unit
+    )
+
+    # Check for conversion error
+    if "error" in conversion_result:
+        return {
+            "error": conversion_result["error"],
+            "params": params,
+            "converted": False
+        }
+
+    # Update the nested value if conversion occurred
+    if conversion_result["converted"]:
+        # Use deepcopy to avoid issues with nested structures
+        updated_params = deepcopy(params)
+        updated_params[parent_key][nested_key] = conversion_result["value"]
+
+        return {
+            "params": updated_params,
+            "converted": True,
+            "timezone": conversion_result.get("timezone")
+        }
+
+    return {"params": params, "converted": False}
+
+
+def convert_datetime_param_with_required_timezone(
+    value: Any,
+    param_name: str,
+    output_unit: str = "milliseconds"
+) -> Dict[str, Any]:
+    """
+    Convert a datetime parameter that REQUIRES an explicit timezone.
+
+    This utility is used by routers (like releases and SLO) that require users
+    to explicitly specify timezone rather than defaulting to UTC. If timezone
+    is missing, returns an elicitation response.
+
+    Args:
+        value: The parameter value (can be string, int, or None)
+        param_name: Name of the parameter for error messages
+        output_unit: Output unit for timestamp (default: "milliseconds")
+
+    Returns:
+        Dictionary with:
+        - "value": Converted timestamp value (or original if not string)
+        - "converted": Boolean indicating if conversion occurred
+        - "timezone": Timezone used for conversion (if converted)
+        - "elicitation_needed": Boolean indicating if timezone is required
+        - "message": User-friendly elicitation message (if timezone missing)
+        - "error": Error message if conversion failed (optional)
+
+    Examples:
+        # With timezone provided
+        result = convert_datetime_param_with_required_timezone(
+            "19 March 2026, 2:47 PM|IST",
+            "start"
+        )
+        # Returns: {"value": 1742369820000, "converted": True, "timezone": "IST"}
+
+        # Without timezone (requires elicitation)
+        result = convert_datetime_param_with_required_timezone(
+            "19 March 2026, 2:47 PM",
+            "start"
+        )
+        # Returns: {"elicitation_needed": True, "message": "...", ...}
+    """
+    # If value is None or already a number, return as-is
+    if value is None or isinstance(value, (int, float)):
+        return {"value": value, "converted": False}
+
+    # If not a string, return as-is
+    if not isinstance(value, str):
+        return {"value": value, "converted": False}
+
+    logger.debug(f"Converting {param_name} datetime string: {value}")
+
+    # Check if timezone is provided in format "datetime|timezone"
+    if "|" not in value:
+        # Return elicitation response
+        return {
+            "elicitation_needed": True,
+            "message": f"I see you want to use '{value}' for {param_name}, but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
+            "missing_parameters": ["timezone"],
+            "user_prompt": f"What timezone should be used for {param_name} '{value}'?"
+        }
+
+    # Extract timezone
+    datetime_str, timezone = value.split("|", 1)
+
+    # Convert to timestamp
+    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), output_unit)
+
+    if "error" in conversion_result:
+        return {
+            "error": f"Failed to convert {param_name} datetime: {conversion_result['error']}",
+            "value": None,
+            "converted": False
+        }
+
+    logger.info(f"Converted {param_name} to timestamp: {conversion_result['timestamp']} (timezone: {timezone.strip()})")
+    return {
+        "value": conversion_result["timestamp"],
+        "converted": True,
+        "timezone": timezone.strip()
+    }

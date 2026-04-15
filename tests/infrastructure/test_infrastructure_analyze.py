@@ -676,6 +676,279 @@ class TestInfrastructureAnalyzeMCPTools(unittest.TestCase):
         self.assertEqual(len(result["hosts"]), 0)
         self.assertEqual(result["count"], 0)
 
+    def test_debug_print_writes_to_stderr(self):
+        """Test debug_print writes to stderr."""
+        from src.infrastructure.infrastructure_analyze_old import debug_print
+
+        with patch("sys.stderr") as mock_stderr:
+            debug_print("hello", end="!")
+            mock_stderr.write.assert_called()
+
+    def test_get_available_metrics_parses_python_literal_string(self):
+        """Test get_available_metrics falls back to ast.literal_eval."""
+        self.analyze_api.get_available_metrics.return_value = {"metrics": ["ok"]}
+
+        payload = "{'timeFrame': {'to': 1, 'from': 0, 'windowSize': 1}, 'type': 'jvmRuntimePlatform'}"
+
+        result = asyncio.run(self.client.get_available_metrics(payload=payload))
+
+        self.assertEqual(result, {"metrics": ["ok"]})
+        self.analyze_api.get_available_metrics.assert_called_once()
+
+    def test_get_available_metrics_parse_failure_returns_failed_to_parse_payload(self):
+        """Test get_available_metrics outer parse exception path."""
+        with patch("json.loads", side_effect=RuntimeError("json boom")):
+            result = asyncio.run(self.client.get_available_metrics(payload='{"type": "jvmRuntimePlatform"}'))
+
+        self.assertEqual(
+            result,
+            {
+                "error": "Failed to parse payload: json boom",
+                "payload": '{"type": "jvmRuntimePlatform"}',
+            },
+        )
+
+    def test_get_available_metrics_import_error_returns_error(self):
+        """Test get_available_metrics import error branch."""
+        original_import = __import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "instana_client.models.get_available_metrics_query":
+                raise ImportError("missing metrics query")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            result = asyncio.run(self.client.get_available_metrics(payload={}))
+
+        self.assertIn("error", result)
+        self.assertIn("Error importing GetAvailableMetricsQuery", result["error"])
+
+    def test_get_available_metrics_query_object_creation_error(self):
+        """Test get_available_metrics query object creation failure."""
+        mock_metrics_query.side_effect = Exception("bad metrics model")
+        try:
+            result = asyncio.run(
+                self.client.get_available_metrics(
+                    payload={"type": "jvmRuntimePlatform"}
+                )
+            )
+        finally:
+            mock_metrics_query.side_effect = None
+
+        self.assertTrue(hasattr(result, "to_dict"))
+
+    def test_get_available_metrics_result_uses_to_dict_when_available(self):
+        """Test get_available_metrics converts model result with to_dict."""
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {"metrics": ["converted"]}
+        self.analyze_api.get_available_metrics.return_value = mock_result
+
+        result = asyncio.run(
+            self.client.get_available_metrics(payload={"type": "jvmRuntimePlatform"})
+        )
+
+        self.assertEqual(result, {"metrics": ["converted"]})
+
+    def test_get_entities_parses_python_literal_string(self):
+        """Test get_entities falls back to ast.literal_eval."""
+        self.analyze_api.get_entities.return_value = {"items": ["ok"]}
+
+        payload = "{'type': 'jvmRuntimePlatform', 'metrics': [{'metric': 'memory.used'}]}"
+
+        result = asyncio.run(self.client.get_entities(payload=payload))
+
+        self.assertEqual(result, {"items": ["ok"]})
+
+    def test_get_entities_parse_failure_returns_failed_to_parse_payload(self):
+        """Test get_entities outer parse exception path."""
+        with patch("json.loads", side_effect=RuntimeError("json boom")):
+            result = asyncio.run(self.client.get_entities(payload='{"type": "jvmRuntimePlatform"}'))
+
+        self.assertEqual(
+            result,
+            {
+                "error": "Failed to parse payload: json boom",
+                "payload": '{"type": "jvmRuntimePlatform"}',
+            },
+        )
+
+    def test_get_entities_result_uses_to_dict_when_available(self):
+        """Test get_entities converts model result with to_dict."""
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {"items": ["converted"]}
+        self.analyze_api.get_entities.return_value = mock_result
+
+        result = asyncio.run(
+            self.client.get_entities(payload={"type": "jvmRuntimePlatform", "metrics": []})
+        )
+
+        self.assertEqual(result, {"items": ["converted"]})
+
+    def test_get_aggregated_entity_groups_parses_python_literal_string(self):
+        """Test get_aggregated_entity_groups falls back to ast.literal_eval."""
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": []}).encode("utf-8")
+        self.analyze_api.get_entity_groups_without_preload_content.return_value = mock_response
+
+        payload = "{'groupBy': ['host.name'], 'type': 'jvmRuntimePlatform'}"
+
+        result = asyncio.run(self.client.get_aggregated_entity_groups(payload=payload))
+
+        self.assertIn("hosts", result)
+        self.assertEqual(result["count"], 0)
+
+    def test_get_aggregated_entity_groups_parse_failure_returns_failed_to_parse_payload(self):
+        """Test get_aggregated_entity_groups outer parse exception path."""
+        with patch("json.loads", side_effect=RuntimeError("json boom")):
+            result = asyncio.run(
+                self.client.get_aggregated_entity_groups(payload='{"groupBy": ["host.name"]}')
+            )
+
+        self.assertEqual(
+            result,
+            {
+                "error": "Failed to parse payload: json boom",
+                "payload": '{"groupBy": ["host.name"]}',
+            },
+        )
+
+    def test_get_aggregated_entity_groups_model_creation_error(self):
+        """Test get_aggregated_entity_groups model creation failure."""
+        mock_groups_query.side_effect = Exception("bad groups model")
+        try:
+            result = asyncio.run(
+                self.client.get_aggregated_entity_groups(
+                    payload={"groupBy": ["host.name"], "type": "jvmRuntimePlatform"}
+                )
+            )
+        finally:
+            mock_groups_query.side_effect = None
+
+        self.assertIn("error", result)
+        self.assertIn("Failed to get entity groups", result["error"])
+
+    def test_get_aggregated_entity_groups_top_level_exception(self):
+        """Test get_aggregated_entity_groups API-call exception branch."""
+        with patch.object(self.client, "_summarize_entity_groups_result", side_effect=Exception("summary boom")):
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.data = json.dumps({"items": []}).encode("utf-8")
+            self.analyze_api.get_entity_groups_without_preload_content.return_value = mock_response
+
+            result = asyncio.run(
+                self.client.get_aggregated_entity_groups(
+                    payload={"groupBy": ["host.name"], "type": "jvmRuntimePlatform"}
+                )
+            )
+
+        self.assertEqual(
+            result,
+            {"error": "API call failed: summary boom"},
+        )
+
+    def test_summarize_entity_groups_result_handles_tag_dict_name(self):
+        """Test summary extraction when tag value is a dict with name."""
+        result = self.client._summarize_entity_groups_result(
+            {
+                "items": [
+                    {"tags": {"host.name": {"name": "host-from-dict"}}},
+                ]
+            },
+            {"groupBy": ["host.name"]},
+        )
+
+        self.assertEqual(result["hosts"], ["host-from-dict"])
+
+    def test_summarize_entity_groups_result_converts_non_string_tag_values(self):
+        """Test summary extraction converts non-string tag values."""
+        result = self.client._summarize_entity_groups_result(
+            {
+                "items": [
+                    {"tags": {"host.name": 123}},
+                    {"tags": {"host.name": 123}},
+                ]
+            },
+            {"groupBy": ["host.name"]},
+        )
+
+        self.assertEqual(result["hosts"], ["123"])
+        self.assertEqual(result["count"], 1)
+
+    def test_summarize_entity_groups_result_returns_error_on_exception(self):
+        """Test summary exception branch returns error payload."""
+        result = self.client._summarize_entity_groups_result(
+            {"items": [object()]},
+            {"groupBy": "not-a-list"},
+        )
+
+        self.assertIn("error", result)
+        self.assertIn("Failed to summarize results", result["error"])
+
+    def test_get_available_plugins_parses_python_literal_string(self):
+        """Test get_available_plugins falls back to ast.literal_eval."""
+        self.analyze_api.get_available_plugins.return_value = {"plugins": ["ok"]}
+
+        payload = "{'query': 'java', 'offline': False}"
+
+        result = asyncio.run(self.client.get_available_plugins(payload=payload))
+
+        self.assertEqual(result, {"plugins": ["ok"]})
+
+    def test_get_available_plugins_parse_failure_returns_failed_to_parse_payload(self):
+        """Test get_available_plugins outer parse exception path."""
+        with patch("json.loads", side_effect=RuntimeError("json boom")):
+            result = asyncio.run(self.client.get_available_plugins(payload='{"query": "java"}'))
+
+        self.assertEqual(
+            result,
+            {
+                "error": "Failed to parse payload: json boom",
+                "payload": '{"query": "java"}',
+            },
+        )
+
+    def test_get_available_plugins_import_error_returns_error(self):
+        """Test get_available_plugins import error branch."""
+        original_import = __import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "instana_client.models.get_available_plugins_query":
+                raise ImportError("missing plugins query")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            result = asyncio.run(self.client.get_available_plugins(payload={}))
+
+        self.assertEqual(
+            result,
+            {"error": "Failed to import GetAvailablePluginsQuery: missing plugins query"},
+        )
+
+    def test_get_available_plugins_query_object_creation_error(self):
+        """Test get_available_plugins query object creation failure."""
+        mock_plugins_query.side_effect = Exception("bad plugins model")
+        try:
+            result = asyncio.run(
+                self.client.get_available_plugins(payload={"query": "java"})
+            )
+        finally:
+            mock_plugins_query.side_effect = None
+
+        self.assertTrue(hasattr(result, "to_dict"))
+
+    def test_get_available_plugins_result_uses_to_dict_when_available(self):
+        """Test get_available_plugins converts model result with to_dict."""
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {"plugins": ["converted"]}
+        self.analyze_api.get_available_plugins.return_value = mock_result
+
+        result = asyncio.run(
+            self.client.get_available_plugins(payload={"query": "java"})
+        )
+
+        self.assertEqual(result, {"plugins": ["converted"]})
+
 
 if __name__ == '__main__':
     unittest.main()

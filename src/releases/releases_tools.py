@@ -8,7 +8,6 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastmcp import Context
 from instana_client.api.releases_api import ReleasesApi
 from instana_client.models.release import Release
 
@@ -48,8 +47,8 @@ class ReleasesMCPTools(BaseInstanaClient):
         name_filter: Optional[str] = None,
         page_number: Optional[int] = None,
         page_size: Optional[int] = None,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Get all releases within a time range with pagination and filtering support.
@@ -167,8 +166,8 @@ class ReleasesMCPTools(BaseInstanaClient):
     async def get_release(
         self,
         release_id: str,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Get a specific release by ID.
@@ -214,8 +213,8 @@ class ReleasesMCPTools(BaseInstanaClient):
         start: int,
         applications: Optional[List[Dict[str, str]]] = None,
         services: Optional[List[Dict[str, Any]]] = None,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Create a new release.
@@ -285,8 +284,8 @@ class ReleasesMCPTools(BaseInstanaClient):
         start: int,
         applications: Optional[List[Dict[str, str]]] = None,
         services: Optional[List[Dict[str, Any]]] = None,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Update an existing release.
@@ -352,8 +351,8 @@ class ReleasesMCPTools(BaseInstanaClient):
     async def delete_release(
         self,
         release_id: str,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Delete a release.

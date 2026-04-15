@@ -1,0 +1,850 @@
+"""
+Tests for Website Analyze Module
+
+Tests website beacon analysis functionality using unittest.
+"""
+
+import asyncio
+import json
+import os
+import sys
+import unittest
+from functools import wraps
+from unittest.mock import MagicMock, Mock, patch
+
+# Add src to path before any imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+
+# Create a mock for the with_header_auth decorator
+def mock_with_header_auth(api_class, allow_mock=True):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(self, *args, **kwargs):
+            if 'api_client' in kwargs and kwargs['api_client'] is not None:
+                return await func(self, *args, **kwargs)
+            kwargs['api_client'] = MagicMock()
+            return await func(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
+# Create a real base class
+class MockBaseInstanaClient:
+    def __init__(self, read_token=None, base_url=None, **kwargs):
+        self.read_token = read_token
+        self.base_url = base_url
+
+# Create mock classes
+class MockGetWebsiteBeaconGroups:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    def to_dict(self):
+        result = {}
+        for key, value in self.kwargs.items():
+            if hasattr(value, 'to_dict'):
+                result[key] = value.to_dict()
+            else:
+                result[key] = value
+        return result
+
+class MockTagFilterExpressionElement:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(**data)
+
+    def to_dict(self):
+        return self.kwargs
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type, handler):
+        """Make this mock compatible with Pydantic to avoid schema generation errors"""
+        from pydantic_core import core_schema
+        return core_schema.any_schema()
+
+# Store original modules for restoration
+_original_modules = {}
+_original_utils_attrs = {}
+
+# Set up mocks immediately at module level (before any imports)
+# Save original modules that we're about to mock
+modules_to_mock = [
+    'mcp', 'mcp.types', 'mcp.server', 'mcp.server.lowlevel', 'mcp.server.lowlevel.server',
+    'instana_client', 'instana_client.api', 'instana_client.api.website_analyze_api',
+    'instana_client.models', 'instana_client.models.get_website_beacon_groups',
+    'instana_client.models.tag_filter_expression_element',
+    'instana_client.models.cursor_pagination', 'instana_client.models.get_website_beacons',
+    'instana_client.models.deprecated_tag_filter'
+]
+
+for module_name in modules_to_mock:
+    if module_name in sys.modules:
+        _original_modules[module_name] = sys.modules[module_name]
+
+# Set up mocks - Create a more complete mock structure for mcp
+mock_mcp = MagicMock()
+mock_mcp.server = MagicMock()
+mock_mcp.server.lowlevel = MagicMock()
+mock_mcp.server.lowlevel.server = MagicMock()
+mock_mcp.server.lowlevel.server.request_ctx = MagicMock()
+mock_mcp_types = MagicMock()
+
+mock_instana_client = MagicMock()
+mock_instana_api = MagicMock()
+mock_website_analyze_api = MagicMock()
+mock_instana_models = MagicMock()
+
+mock_get_website_beacon_groups = MagicMock()
+mock_get_website_beacon_groups.GetWebsiteBeaconGroups = MockGetWebsiteBeaconGroups
+
+mock_tag_filter_element = MagicMock()
+mock_tag_filter_element.TagFilterExpressionElement = MockTagFilterExpressionElement
+
+mock_cursor_pagination = MagicMock()
+mock_cursor_pagination.CursorPagination = MagicMock
+
+mock_get_website_beacons = MagicMock()
+mock_get_website_beacons.GetWebsiteBeacons = MagicMock
+
+mock_deprecated_tag_filter = MagicMock()
+mock_deprecated_tag_filter.DeprecatedTagFilter = MagicMock
+
+# Create mock modules (but NOT src.core or src.core.utils - use real ones)
+sys.modules['mcp'] = mock_mcp
+sys.modules['mcp.types'] = mock_mcp_types
+sys.modules['mcp.server'] = mock_mcp.server
+sys.modules['mcp.server.lowlevel'] = mock_mcp.server.lowlevel
+sys.modules['mcp.server.lowlevel.server'] = mock_mcp.server.lowlevel.server
+sys.modules['instana_client'] = mock_instana_client
+sys.modules['instana_client.api'] = mock_instana_api
+sys.modules['instana_client.api.website_analyze_api'] = mock_website_analyze_api
+sys.modules['instana_client.models'] = mock_instana_models
+sys.modules['instana_client.models.get_website_beacon_groups'] = mock_get_website_beacon_groups
+sys.modules['instana_client.models.tag_filter_expression_element'] = mock_tag_filter_element
+sys.modules['instana_client.models.cursor_pagination'] = mock_cursor_pagination
+sys.modules['instana_client.models.get_website_beacons'] = mock_get_website_beacons
+sys.modules['instana_client.models.deprecated_tag_filter'] = mock_deprecated_tag_filter
+
+# Patch the decorator and base class in the real src.core.utils module
+from src.core import utils as real_utils
+
+_original_utils_attrs['with_header_auth'] = getattr(real_utils, 'with_header_auth', None)
+_original_utils_attrs['BaseInstanaClient'] = getattr(real_utils, 'BaseInstanaClient', None)
+
+real_utils.with_header_auth = mock_with_header_auth
+real_utils.BaseInstanaClient = MockBaseInstanaClient
+
+# Now import the module to test
+from src.website.website_analyze import (
+    DEFAULT_CHARSET,
+    DEFAULT_GROUP_BY_TAG,
+    DEFAULT_GROUP_BY_TAG_ENTITY,
+    WebsiteAnalyzeMCPTools,
+    _decode_response,
+    clean_nan_values,
+)
+
+
+def teardown_module():
+    """Tear down mocks at module level - called once after all tests"""
+    # Restore original modules
+    for module_name, original_module in _original_modules.items():
+        sys.modules[module_name] = original_module
+
+    # Remove mocked modules that weren't there originally
+    for module_name in modules_to_mock:
+        if module_name in sys.modules and module_name not in _original_modules:
+            del sys.modules[module_name]
+
+    # Restore original utils attributes
+    for attr_name, original_value in _original_utils_attrs.items():
+        if original_value is not None:
+            setattr(real_utils, attr_name, original_value)
+        elif hasattr(real_utils, attr_name):
+            delattr(real_utils, attr_name)
+
+
+class TestCleanNanValues(unittest.TestCase):
+    """Test clean_nan_values function"""
+
+    def test_clean_nan_in_dict(self):
+        """Test cleaning NaN values in dictionary"""
+        data = {"key1": "NaN", "key2": "value", "key3": "NaN"}
+        result = clean_nan_values(data)
+
+        self.assertIsNone(result["key1"])
+        self.assertEqual(result["key2"], "value")
+        self.assertIsNone(result["key3"])
+
+    def test_clean_nan_in_list(self):
+        """Test cleaning NaN values in list"""
+        data = ["NaN", "value", "NaN", 123]
+        result = clean_nan_values(data)
+
+        self.assertIsNone(result[0])
+        self.assertEqual(result[1], "value")
+        self.assertIsNone(result[2])
+        self.assertEqual(result[3], 123)
+
+    def test_clean_nan_in_nested_structure(self):
+        """Test cleaning NaN values in nested structures"""
+        data = {
+            "level1": {
+                "level2": ["NaN", {"level3": "NaN"}]
+            },
+            "other": "NaN"
+        }
+        result = clean_nan_values(data)
+
+        self.assertIsNone(result["level1"]["level2"][0])
+        self.assertIsNone(result["level1"]["level2"][1]["level3"])
+        self.assertIsNone(result["other"])
+
+    def test_clean_nan_preserves_other_values(self):
+        """Test that non-NaN values are preserved"""
+        data = {
+            "string": "test",
+            "number": 123,
+            "float": 45.67,
+            "bool": True,
+            "none": None,
+            "list": [1, 2, 3],
+            "dict": {"nested": "value"}
+        }
+        result = clean_nan_values(data)
+
+        self.assertEqual(result, data)
+
+    def test_clean_nan_with_nan_string_case_sensitive(self):
+        """Test that only exact 'NaN' string is cleaned"""
+        data = {"NaN": "NaN", "nan": "nan", "NAN": "NAN"}
+        result = clean_nan_values(data)
+
+        self.assertIsNone(result["NaN"])
+        self.assertEqual(result["nan"], "nan")
+        self.assertEqual(result["NAN"], "NAN")
+
+
+class TestDecodeResponse(unittest.TestCase):
+    """Test _decode_response function"""
+
+    def test_decode_with_utf8(self):
+        """Test decoding with UTF-8 charset"""
+        response = Mock()
+        response.data = "test data".encode('utf-8')
+        response.headers = {'Content-Type': 'application/json; charset=utf-8'}
+
+        result = _decode_response(response)
+        self.assertEqual(result, "test data")
+
+    def test_decode_with_custom_charset(self):
+        """Test decoding with custom charset"""
+        response = Mock()
+        response.data = "test data".encode('iso-8859-1')
+        response.headers = {'Content-Type': 'application/json; charset=iso-8859-1'}
+
+        result = _decode_response(response)
+        self.assertEqual(result, "test data")
+
+    def test_decode_without_charset(self):
+        """Test decoding without charset (defaults to UTF-8)"""
+        response = Mock()
+        response.data = "test data".encode('utf-8')
+        response.headers = {'Content-Type': 'application/json'}
+
+        result = _decode_response(response)
+        self.assertEqual(result, "test data")
+
+    def test_decode_without_headers(self):
+        """Test decoding without headers"""
+        response = Mock()
+        response.data = "test data".encode('utf-8')
+        response.headers = None
+
+        result = _decode_response(response)
+        self.assertEqual(result, "test data")
+
+    def test_decode_with_invalid_charset_fallback(self):
+        """Test decoding with invalid charset falls back to UTF-8"""
+        response = Mock()
+        response.data = "test data".encode('utf-8')
+        response.headers = {'Content-Type': 'application/json; charset=invalid-charset'}
+
+        result = _decode_response(response)
+        self.assertEqual(result, "test data")
+
+    def test_decode_with_unicode_decode_error(self):
+        """Test decoding with unicode decode error uses replacement"""
+        response = Mock()
+        response.data = b'\x80\x81\x82'
+        response.headers = {'Content-Type': 'application/json; charset=utf-8'}
+
+        result = _decode_response(response)
+        self.assertIsInstance(result, str)
+
+
+class TestWebsiteAnalyzeMCPTools(unittest.TestCase):
+    """Test WebsiteAnalyzeMCPTools class"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.tools_instance = WebsiteAnalyzeMCPTools(
+            read_token="test_token",
+            base_url="https://test.instana.io"
+        )
+        self.mock_api_client = Mock()
+        self.mock_api_client.get_beacon_groups_without_preload_content = Mock()
+        self.mock_api_client.get_beacons_without_preload_content = Mock()
+
+    def test_initialization(self):
+        """Test WebsiteAnalyzeMCPTools initialization"""
+        self.assertEqual(self.tools_instance.read_token, "test_token")
+        self.assertEqual(self.tools_instance.base_url, "https://test.instana.io")
+
+    def test_get_beacon_groups_with_all_params(self):
+        """Test get_website_beacon_groups with all parameters"""
+        metrics = [{"metric": "beaconCount", "aggregation": "SUM"}]
+        group = {"groupByTag": "beacon.page.name"}
+        tag_filter = {
+            "type": "TAG_FILTER",
+            "name": "beacon.website.name",
+            "operator": "EQUALS",
+            "entity": "NOT_APPLICABLE",
+            "value": "test-site"
+        }
+        time_frame = {"windowSize": 3600000}
+        beacon_type = "PAGELOAD"
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": []}).encode('utf-8')
+        self.mock_api_client.get_beacon_groups_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=metrics,
+            group=group,
+            tag_filter_expression=tag_filter,
+            time_frame=time_frame,
+            beacon_type=beacon_type,
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("items", result)
+        self.mock_api_client.get_beacon_groups_without_preload_content.assert_called_once()
+
+    def test_get_beacon_groups_with_defaults(self):
+        """Test get_website_beacon_groups applies defaults"""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": []}).encode('utf-8')
+        self.mock_api_client.get_beacon_groups_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=[{"metric": "beaconCount", "aggregation": "SUM"}],
+            group={"groupByTag": "beacon.page.name"},
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("items", result)
+
+    def test_get_beacon_groups_http_error(self):
+        """Test get_website_beacon_groups with HTTP error"""
+        metrics = [{"metric": "beaconCount", "aggregation": "SUM"}]
+        group = {"groupByTag": "beacon.page.name"}
+
+        mock_response = Mock()
+        mock_response.status = 500
+        mock_response.data = b'Internal Server Error'
+        self.mock_api_client.get_beacon_groups_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=metrics,
+            group=group,
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("HTTP 500", result["error"])
+
+    def test_get_beacon_groups_invalid_metric_error(self):
+        """Test get_website_beacon_groups with invalid metric error"""
+        metrics = [{"metric": "invalidMetric", "aggregation": "SUM"}]
+        group = {"groupByTag": "beacon.page.name"}
+
+        mock_response = Mock()
+        mock_response.status = 400
+        mock_response.data = json.dumps({
+            "errors": ["Metric type unknown: invalidMetric"]
+        }).encode('utf-8')
+        self.mock_api_client.get_beacon_groups_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=metrics,
+            group=group,
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("elicitation_needed", result)
+        self.assertIn("Invalid metric detected", result["reason"])
+
+    def test_get_beacon_groups_api_exception(self):
+        """Test get_website_beacon_groups when API raises exception"""
+        metrics = [{"metric": "beaconCount", "aggregation": "SUM"}]
+        group = {"groupByTag": "beacon.page.name"}
+
+        self.mock_api_client.get_beacon_groups_without_preload_content.side_effect = Exception("API Error")
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=metrics,
+            group=group,
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("error", result)
+
+    def test_get_beacon_groups_invalid_tag_filter(self):
+        """Test get_website_beacon_groups with invalid tag filter expression"""
+        metrics = [{"metric": "beaconCount", "aggregation": "SUM"}]
+        group = {"groupByTag": "beacon.page.name"}
+        tag_filter = {"invalid": "structure"}
+
+        with patch('instana_client.models.tag_filter_expression_element.TagFilterExpressionElement') as mock_tag_filter:
+            mock_tag_filter.from_dict.side_effect = Exception("Invalid tag filter")
+
+            result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+                metrics=metrics,
+                group=group,
+                tag_filter_expression=tag_filter,
+                beacon_type="PAGELOAD",
+                api_client=self.mock_api_client
+            ))
+
+            self.assertIn("error", result)
+            self.assertIn("Invalid tag filter expression", result["error"])
+
+    def test_get_beacons_missing_beacon_type(self):
+        """Test get_website_beacons without beacon_type triggers elicitation"""
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("elicitation_needed", result)
+        self.assertIn("missing_parameters", result)
+        self.assertTrue(any(p["name"] == "beacon_type" for p in result["missing_parameters"]))
+
+    def test_get_beacons_with_beacon_type(self):
+        """Test get_website_beacons with beacon_type"""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({
+            "items": [],
+            "totalHits": 0
+        }).encode('utf-8')
+        self.mock_api_client.get_beacons_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        # The response should have either summary or beacons key after summarization
+        self.assertTrue("summary" in result or "beacons" in result or "items" in result)
+
+    def test_summarize_valid_response(self):
+        """Test summarizing valid beacons response"""
+        response_data = {
+            "totalHits": 100,
+            "totalRepresentedItemCount": 50,
+            "totalRetainedItemCount": 50,
+            "canLoadMore": True,
+            "adjustedTimeframe": {"from": 1000, "to": 2000},
+            "items": [
+                {
+                    "beacon": {
+                        "websiteLabel": "Test Site",
+                        "timestamp": 1234567890,
+                        "duration": 1500,
+                        "page": "/home",
+                        "errorCount": 0
+                    }
+                }
+            ]
+        }
+
+        result = self.tools_instance._summarize_beacons_response(response_data)
+
+        self.assertIn("summary", result)
+        self.assertEqual(result["summary"]["totalHits"], 100)
+        self.assertTrue(result["summary"]["canLoadMore"])
+        self.assertIn("beacons", result)
+        self.assertEqual(len(result["beacons"]), 1)
+        self.assertEqual(result["beacons"][0]["websiteLabel"], "Test Site")
+
+    def test_check_elicitation_all_params_missing(self):
+        """Test elicitation when all parameters are missing"""
+        result = self.tools_instance._check_elicitation_for_beacon_groups(None, None, None)
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["elicitation_required"])
+        self.assertEqual(len(result["missing_parameters"]), 3)
+
+    def test_validate_valid_tags(self):
+        """Test validation with valid beacon.* tags"""
+        tag_filter = {
+            "type": "TAG_FILTER",
+            "name": "beacon.website.name",
+            "operator": "EQUALS",
+            "entity": "NOT_APPLICABLE",
+            "value": "test"
+        }
+        group = {"groupByTag": "beacon.page.name"}
+
+        result = self.tools_instance._validate_tag_names(tag_filter, group, "PAGELOAD")
+
+        self.assertIsNone(result)
+
+    def test_validate_invalid_tag_name(self):
+        """Test validation with invalid tag name"""
+        tag_filter = {
+            "type": "TAG_FILTER",
+            "name": "invalid.tag.name",
+            "operator": "EQUALS",
+            "entity": "NOT_APPLICABLE",
+            "value": "test"
+        }
+        group = {"groupByTag": "beacon.page.name"}
+
+        result = self.tools_instance._validate_tag_names(tag_filter, group, "PAGELOAD")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["elicitation_needed"])
+
+    def test_validate_tag_with_expression_type(self):
+        """Test validation with EXPRESSION type containing TAG_FILTERs"""
+        tag_filter = {
+            "type": "EXPRESSION",
+            "logicalOperator": "AND",
+            "elements": [
+                {
+                    "type": "TAG_FILTER",
+                    "name": "beacon.page.name",
+                    "operator": "EQUALS",
+                    "entity": "NOT_APPLICABLE",
+                    "value": "home"
+                }
+            ]
+        }
+        group = {"groupByTag": "beacon.user.name"}
+
+        result = self.tools_instance._validate_tag_names(tag_filter, group, "PAGELOAD")
+
+        self.assertIsNone(result)
+
+    def test_validate_tag_missing_entity_in_expression(self):
+        """Test validation detects missing entity in EXPRESSION elements"""
+        tag_filter = {
+            "type": "EXPRESSION",
+            "logicalOperator": "AND",
+            "elements": [
+                {
+                    "type": "TAG_FILTER",
+                    "name": "beacon.page.name",
+                    "operator": "EQUALS",
+                    "value": "home"
+                    # Missing entity field
+                }
+            ]
+        }
+
+        result = self.tools_instance._validate_tag_names(tag_filter, None, "PAGELOAD")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["elicitation_needed"])
+
+    def test_validate_tag_no_tags_extracted(self):
+        """Test validation when no tag names are extracted"""
+        tag_filter = {
+            "type": "EXPRESSION",
+            "logicalOperator": "AND",
+            "elements": []
+        }
+        group = {}
+
+        result = self.tools_instance._validate_tag_names(tag_filter, group, "PAGELOAD")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["elicitation_needed"])
+
+    def test_get_beacons_with_tag_filter_single(self):
+        """Test get_website_beacons with single TAG_FILTER"""
+        tag_filter = {
+            "type": "TAG_FILTER",
+            "name": "beacon.website.name",
+            "operator": "EQUALS",
+            "entity": "NOT_APPLICABLE",
+            "value": "test-site"
+        }
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": [], "totalHits": 0}).encode('utf-8')
+        self.mock_api_client.get_beacons_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            tag_filter_expression=tag_filter,
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("summary", result)
+
+    def test_get_beacons_with_expression_type(self):
+        """Test get_website_beacons with EXPRESSION type"""
+        tag_filter = {
+            "type": "EXPRESSION",
+            "logicalOperator": "AND",
+            "elements": [
+                {
+                    "type": "TAG_FILTER",
+                    "name": "beacon.page.name",
+                    "operator": "EQUALS",
+                    "entity": "NOT_APPLICABLE",
+                    "value": "home"
+                }
+            ]
+        }
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": [], "totalHits": 0}).encode('utf-8')
+        self.mock_api_client.get_beacons_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            tag_filter_expression=tag_filter,
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("summary", result)
+
+    def test_get_beacons_pagination_limits(self):
+        """Test get_website_beacons pagination size limits"""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": [], "totalHits": 0}).encode('utf-8')
+        self.mock_api_client.get_beacons_without_preload_content.return_value = mock_response
+
+        # Test below minimum
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            pagination={"retrievalSize": -5},
+            api_client=self.mock_api_client
+        ))
+        self.assertIn("summary", result)
+
+        # Test above maximum
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            pagination={"retrievalSize": 500},
+            api_client=self.mock_api_client
+        ))
+        self.assertIn("summary", result)
+
+    def test_get_beacons_invalid_tag_filter(self):
+        """Test get_website_beacons with invalid tag filter"""
+        tag_filter = {
+            "type": "TAG_FILTER",
+            "name": "beacon.page.name",
+            "operator": "EQUALS"
+            # Missing value and entity fields
+        }
+
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            tag_filter_expression=tag_filter,
+            api_client=self.mock_api_client
+        ))
+
+        # Should trigger elicitation for missing entity field
+        self.assertIn("elicitation_needed", result)
+
+    def test_summarize_beacons_with_empty_values(self):
+        """Test summarizing beacons with empty/default values"""
+        response_data = {
+            "totalHits": 10,
+            "items": [
+                {
+                    "beacon": {
+                        "websiteLabel": "Test",
+                        "timestamp": 1234567890,
+                        "duration": 100,  # Non-zero value should be kept
+                        "errorCount": 0,  # Should be skipped (0 for errorCount)
+                        "page": "",  # Should be skipped (empty string)
+                        "emptyList": [],  # Should be skipped
+                        "emptyDict": {},  # Should be skipped
+                        "nullValue": None,  # Should be skipped
+                        "browserName": "Chrome"  # Essential field, should be kept
+                    }
+                }
+            ]
+        }
+
+        result = self.tools_instance._summarize_beacons_response(response_data)
+
+        self.assertIn("beacons", result)
+        self.assertEqual(len(result["beacons"]), 1)
+        # Check that empty values were filtered out and valid ones kept
+        beacon = result["beacons"][0]
+        self.assertIn("duration", beacon)  # Non-zero duration should be kept
+        self.assertNotIn("errorCount", beacon)  # 0 errorCount should be skipped
+        self.assertNotIn("page", beacon)  # Empty string should be skipped
+        self.assertIn("browserName", beacon)  # Essential field should be kept
+
+    def test_summarize_beacons_invalid_item_structure(self):
+        """Test summarizing with invalid item structure"""
+        response_data = {
+            "totalHits": 2,
+            "items": [
+                "invalid_item",  # Not a dict
+                {"no_beacon_key": "value"},  # Missing beacon key
+                {"beacon": "not_a_dict"}  # Beacon is not a dict
+            ]
+        }
+
+        result = self.tools_instance._summarize_beacons_response(response_data)
+
+        self.assertIn("beacons", result)
+        self.assertEqual(len(result["beacons"]), 0)
+
+    def test_get_beacon_groups_with_groupby_tag_lowercase(self):
+        """Test get_website_beacon_groups with lowercase groupbyTag"""
+        group = {"groupbyTag": "beacon.page.name"}
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": []}).encode('utf-8')
+        self.mock_api_client.get_beacon_groups_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=[{"metric": "beaconCount", "aggregation": "SUM"}],
+            group=group,
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("items", result)
+
+    def test_get_beacon_groups_with_groupby_tag_entity(self):
+        """Test get_website_beacon_groups with groupByTagEntity"""
+        group = {
+            "groupByTag": "beacon.page.name",
+            "groupByTagEntity": "DESTINATION"
+        }
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": []}).encode('utf-8')
+        self.mock_api_client.get_beacon_groups_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=[{"metric": "beaconCount", "aggregation": "SUM"}],
+            group=group,
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("items", result)
+
+    def test_get_beacon_groups_nan_error(self):
+        """Test get_website_beacon_groups with NaN error in response"""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps({"items": []}).encode('utf-8')
+
+        # Simulate NaN error
+        self.mock_api_client.get_beacon_groups_without_preload_content.side_effect = Exception(
+            "customMetric: NaN is not valid"
+        )
+
+        result = asyncio.run(self.tools_instance.get_website_beacon_groups(
+            metrics=[{"metric": "beaconCount", "aggregation": "SUM"}],
+            group={"groupByTag": "beacon.page.name"},
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("NaN", result["error"])
+
+    def test_validate_tag_missing_entity(self):
+        """Test validation with missing entity field"""
+        tag_filter = {
+            "type": "TAG_FILTER",
+            "name": "beacon.website.name",
+            "operator": "EQUALS",
+            "value": "test"
+            # Missing entity field
+        }
+
+        result = self.tools_instance._validate_tag_names(tag_filter, None, "PAGELOAD")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["elicitation_needed"])
+        self.assertIn("missing_entity_tags", result)
+
+    def test_get_beacons_list_response(self):
+        """Test get_website_beacons with list response"""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps([{"beacon": "data"}]).encode('utf-8')
+        self.mock_api_client.get_beacons_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        # After summarization, list responses are converted to dict with beacons key
+        self.assertIn("summary", result)
+        self.assertIn("beacons", result)
+
+    def test_get_beacons_non_dict_response(self):
+        """Test get_website_beacons with non-dict response"""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.data = json.dumps("string response").encode('utf-8')
+        self.mock_api_client.get_beacons_without_preload_content.return_value = mock_response
+
+        result = asyncio.run(self.tools_instance.get_website_beacons(
+            beacon_type="PAGELOAD",
+            api_client=self.mock_api_client
+        ))
+
+        # After summarization, non-dict responses are wrapped
+        self.assertIn("summary", result)
+
+
+class TestConstants(unittest.TestCase):
+    """Test module constants"""
+
+    def test_default_charset(self):
+        """Test DEFAULT_CHARSET constant"""
+        self.assertEqual(DEFAULT_CHARSET, 'utf-8')
+
+    def test_default_group_by_tag(self):
+        """Test DEFAULT_GROUP_BY_TAG constant"""
+        self.assertEqual(DEFAULT_GROUP_BY_TAG, 'beacon.location.path')
+
+    def test_default_group_by_tag_entity(self):
+        """Test DEFAULT_GROUP_BY_TAG_ENTITY constant"""
+        self.assertEqual(DEFAULT_GROUP_BY_TAG_ENTITY, 'NOT_APPLICABLE')
+
+
+if __name__ == '__main__':
+    unittest.main()

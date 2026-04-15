@@ -412,7 +412,179 @@ class TestAPIEntityTypeMapping:
         assert ("genai", "llm") in mappings
         assert ("llm", "llm") in mappings
         assert ("ai", "llm") in mappings
-        assert "entity2" in registry._cache
+
+    def test_extract_normalized_mappings_other_special_and_fallback_cases(self, temp_schema_dir):
+        registry = EntityCapabilityRegistry(schema_dir=temp_schema_dir)
+
+        assert registry._extract_normalized_mappings("docker") == [("docker", "container")]
+        assert registry._extract_normalized_mappings("jvmRuntimePlatform") == [("jvm", "runtime")]
+        assert registry._extract_normalized_mappings("db2Database") == [("db2", "database")]
+        assert registry._extract_normalized_mappings("ibmMqQueue") == [("ibmmq", "queue")]
+        assert registry._extract_normalized_mappings("customPlugin") == [("customplugin", "customplugin")]
+
+    def test_load_schemas_continues_when_json_load_fails(self, tmp_path):
+        schema_dir = tmp_path / "schema"
+        schema_dir.mkdir()
+        bad_schema_file = schema_dir / "bad_schema.json"
+        bad_schema_file.write_text("{invalid json")
+
+        registry = EntityCapabilityRegistry(schema_dir=schema_dir)
+
+        assert registry._cache == {}
+
+    def test_parse_schema_handles_non_dict_tag_data_and_bad_schema(self, temp_schema_dir):
+        registry = EntityCapabilityRegistry(schema_dir=temp_schema_dir)
+
+        registry._parse_schema(
+            {
+                "type": "customEntity",
+                "api_endpoint": "/api/custom",
+                "parameters": {
+                    "metrics": {"metric": ["x"], "aggregation": {"enum": ["mean"]}},
+                    "tagFilterElements": [],
+                },
+            },
+            "customEntity_schema.json",
+        )
+
+        assert "customEntity" in registry._cache
+        assert registry._cache["customEntity"].tag_filters == []
+
+        registry._parse_schema(
+            {
+                "type": "brokenEntity",
+                "parameters": {
+                    "metrics": None,
+                },
+            },
+            "brokenEntity_schema.json",
+        )
+
+        assert "brokenEntity" not in registry._cache
+
+    def test_load_entity_type_mapping_uses_fallback_on_error_dict(self, temp_schema_dir):
+        with patch(
+            "src.infrastructure.entity_registry.InfrastructureCatalogMCPTools.get_infrastructure_catalog_plugins",
+            new_callable=MagicMock,
+        ) as mock_get_plugins:
+            mock_get_plugins.return_value = {"error": "boom"}
+            with patch("asyncio.get_event_loop") as mock_get_event_loop:
+                loop = MagicMock()
+                loop.run_until_complete.return_value = {"error": "boom"}
+                mock_get_event_loop.return_value = loop
+
+                registry = EntityCapabilityRegistry(
+                    schema_dir=temp_schema_dir,
+                    base_url="https://test.instana.io",
+                    read_token="test-token",
+                )
+
+        assert registry.entity_type_mapping.get(("kubernetes", "pod")) == "kubernetesPod"
+
+    def test_load_entity_type_mapping_uses_fallback_when_plugins_empty(self, temp_schema_dir):
+        with patch(
+            "src.infrastructure.entity_registry.InfrastructureCatalogMCPTools.get_infrastructure_catalog_plugins",
+            new_callable=MagicMock,
+        ) as mock_get_plugins:
+            mock_get_plugins.return_value = {"plugins": []}
+            with patch("asyncio.get_event_loop") as mock_get_event_loop:
+                loop = MagicMock()
+                loop.run_until_complete.return_value = {"plugins": []}
+                mock_get_event_loop.return_value = loop
+
+                registry = EntityCapabilityRegistry(
+                    schema_dir=temp_schema_dir,
+                    base_url="https://test.instana.io",
+                    read_token="test-token",
+                )
+
+        assert registry.entity_type_mapping.get(("kubernetes", "pod")) == "kubernetesPod"
+
+    def test_load_entity_type_mapping_creates_new_loop_when_missing(self, temp_schema_dir):
+        plugin_result = {"plugins": ["docker", "host", "customPlugin"]}
+
+        with patch(
+            "src.infrastructure.entity_registry.InfrastructureCatalogMCPTools.get_infrastructure_catalog_plugins",
+            new_callable=MagicMock,
+        ) as mock_get_plugins:
+            mock_get_plugins.return_value = plugin_result
+            with patch("asyncio.get_event_loop", side_effect=RuntimeError("no loop")):
+                with patch("asyncio.new_event_loop") as mock_new_event_loop:
+                    with patch("asyncio.set_event_loop") as mock_set_event_loop:
+                        loop = MagicMock()
+                        loop.run_until_complete.return_value = plugin_result
+                        mock_new_event_loop.return_value = loop
+
+                        registry = EntityCapabilityRegistry(
+                            schema_dir=temp_schema_dir,
+                            base_url="https://test.instana.io",
+                            read_token="test-token",
+                        )
+
+        mock_set_event_loop.assert_called_once_with(loop)
+        assert registry.entity_type_mapping.get(("docker", "container")) == "docker"
+        assert registry.entity_type_mapping.get(("host", "host")) == "host"
+        assert registry.entity_type_mapping.get(("customplugin", "customplugin")) == "customPlugin"
+
+    def test_load_entity_type_mapping_uses_fallback_on_exception(self, temp_schema_dir):
+        with patch(
+            "src.infrastructure.entity_registry.InfrastructureCatalogMCPTools",
+            side_effect=Exception("catalog init failed"),
+        ):
+            registry = EntityCapabilityRegistry(
+                schema_dir=temp_schema_dir,
+                base_url="https://test.instana.io",
+                read_token="test-token",
+            )
+
+        assert registry.entity_type_mapping.get(("kubernetes", "pod")) == "kubernetesPod"
+
+    def test_resolve_returns_none_when_mapping_exists_but_capability_missing(self, temp_schema_dir):
+        registry = EntityCapabilityRegistry(schema_dir=temp_schema_dir)
+        registry.entity_type_mapping[("ghost", "kind")] = "ghostEntity"
+
+        capability = registry.resolve("ghost", "kind")
+
+        assert capability is None
+
+    def test_find_metric_single_match_and_unknown_entity(self, tmp_path):
+        schema_dir = tmp_path / "schema"
+        schema_dir.mkdir()
+        schema = {
+            "type": "singleMetricEntity",
+            "api_endpoint": "/api/test",
+            "parameters": {
+                "metrics": {"metric": ["diskUsed"]},
+                "tagFilterElements": {"enum": []},
+            },
+        }
+        with open(schema_dir / "singleMetricEntity_schema.json", "w") as f:
+            json.dump(schema, f)
+
+        registry = EntityCapabilityRegistry(schema_dir=schema_dir)
+
+        assert registry.find_metric("singleMetricEntity", "disk") == "diskUsed"
+        assert registry.find_metric("unknownEntity", "cpu") is None
+
+    def test_find_all_matching_metrics_unknown_entity(self, temp_schema_dir):
+        registry = EntityCapabilityRegistry(schema_dir=temp_schema_dir)
+
+        assert registry.find_all_matching_metrics("unknownEntity", "cpu") == []
+
+    def test_find_tag_filter_unknown_entity_and_getters_unknown_entity(self, temp_schema_dir):
+        registry = EntityCapabilityRegistry(schema_dir=temp_schema_dir)
+
+        assert registry.find_tag_filter("unknownEntity", "namespace") is None
+        assert registry.get_all_metrics("unknownEntity") == []
+        assert registry.get_all_tag_filters("unknownEntity") == []
+
+    def test_get_full_schema_returns_none_on_json_error(self, temp_schema_dir):
+        registry = EntityCapabilityRegistry(schema_dir=temp_schema_dir)
+
+        with patch("builtins.open", mock_open(read_data="{bad json")):
+            schema = registry.get_full_schema("kubernetesPod")
+
+        assert schema is None
 
 
 if __name__ == "__main__":

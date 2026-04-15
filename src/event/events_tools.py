@@ -11,8 +11,6 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp import Context
-
 try:
     from instana_client.api.events_api import (
         EventsApi,
@@ -45,6 +43,11 @@ DEFAULT_TIME_WINDOW_HOURS = 24
 DEFAULT_MAX_EVENTS = 50
 DEFAULT_SIZE = 100
 
+# Event severity levels
+SEVERITY_CHANGE = -1  # Informational change events
+SEVERITY_WARNING = 5  # Warning events
+SEVERITY_CRITICAL = 10  # Critical events
+
 # API parameter names
 API_PARAM_FROM = "var_from"
 API_PARAM_TO = "to"
@@ -53,10 +56,11 @@ API_PARAM_FILTER_EVENT_UPDATES = "filter_event_updates"
 API_PARAM_EXCLUDE_TRIGGERED_BEFORE = "exclude_triggered_before"
 API_PARAM_EVENT_TYPE_FILTERS = "event_type_filters"
 
-# Event type constants
-EVENT_TYPE_ISSUE = "issue"
-EVENT_TYPE_INCIDENT = "incident"
-EVENT_TYPE_CHANGE = "change"
+# Valid event types (API values)
+VALID_EVENT_TYPES = {"INCIDENT", "ISSUE", "CHANGE"}
+
+# Valid entity types
+VALID_ENTITY_TYPES = {"application", "service", "endpoint", "infrastructure"}
 
 class AgentMonitoringEventsMCPTools(BaseInstanaClient):
 
@@ -488,7 +492,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
         return summary
 
     @with_header_auth(EventsApi)
-    async def get_event(self, event_id: str, ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    async def get_event(self, event_id: str, ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get a specific event by ID.
 
@@ -582,7 +586,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
                                          to_time: Optional[int] = None,
                                          time_range: Optional[str] = None,
                                          max_events: Optional[int] = 50,
-                                         ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                         ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get Kubernetes info events based on the provided parameters and return a detailed analysis.
 
@@ -752,7 +756,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
                                           size: Optional[int] = 100,
                                           max_events: Optional[int] = 50,
                                           time_range: Optional[str] = None,
-                                          ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                          ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get agent monitoring events from Instana and return a detailed analysis.
 
@@ -887,307 +891,190 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
             }
 
     @with_header_auth(EventsApi)
-    async def get_issues(self,
-                             query: Optional[str] = None,
-                             from_time: Optional[int] = None,
-                             to_time: Optional[int] = None,
-                             filter_event_updates: Optional[bool] = None,
-                             exclude_triggered_before: Optional[int] = None,
-                             max_events: Optional[int] = 50,
-                             size: Optional[int] = 100,
-                             time_range: Optional[str] = None,
-                             ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    async def get_events(
+        self,
+        query: Optional[str] = None,
+        from_time: Optional[int] = None,
+        to_time: Optional[int] = None,
+        filter_event_updates: Optional[bool] = None,
+        exclude_triggered_before: Optional[bool] = None,
+        max_events: Optional[int] = 50,
+        event_type_filters: Optional[List[str]] = None,
+        time_range: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        entity_name: Optional[str] = None,
+        state: Optional[str] = None,
+        problem: Optional[str] = None,
+        severity: Optional[int] = None,
+        ctx=None,
+        api_client=None
+    ) -> Dict[str, Any]:
         """
-        Get issue events from Instana based on the provided parameters.
+        Get events from Instana with flexible filtering options.
 
-        This tool retrieves issue events from Instana based on specified filters and time range.
-        Issues are events that represent problems that need attention but are not critical.
-
-        Examples:
-        Get all issue events from the last 24 hours:
-           - time_range: "last 24 hours"
+        This method retrieves events from Instana and supports various filtering options including
+        time range, event type, entity type, state, problem, severity, and more. You can specify
+        a time range using timestamps or natural language like "last 24 hours" or "last 2 days".
 
         Args:
             query: Query string to filter events (optional)
             from_time: Start timestamp in milliseconds since epoch (optional, defaults to 1 hour ago)
             to_time: End timestamp in milliseconds since epoch (optional, defaults to now)
-            filter_event_updates: Whether to filter event updates (optional)
-            exclude_triggered_before: Exclude events triggered before this timestamp (optional)
-            max_events: Maximum number of events to process (default: 50)
-            size: Maximum number of events to return from API (default: 100)
+            filter_event_updates: Filter out event updates (optional)
+            exclude_triggered_before: Exclude events triggered before the time range (optional)
+            max_events: Maximum number of events to return (optional, default 50)
+            event_type_filters: List of event type filters (optional, e.g., ["INCIDENT", "ISSUE"])
             time_range: Natural language time range like "last 24 hours", "last 2 days", "last week" (optional)
+            entity_type: Entity type filter - "application", "service", "endpoint", "infrastructure" (optional)
+            entity_name: Filter by entity name (partial match, optional)
+            state: Event state filter - "open" or "closed" (optional)
+            problem: Filter by problem description (partial match, optional)
+            severity: Severity filter - -1 (change), 5 (warning), 10 (critical) (optional)
             ctx: The MCP context (optional)
             api_client: API client for testing (optional)
 
         Returns:
-            Dictionary containing the list of issue events or error information
-        """
+            Dictionary containing:
+                - events: List of optimized event data
+                - events_returned: Number of events returned
+                - total_events: Total number of events matching filters
+                - time_range: Human-readable time range
+                - error: Error message if operation failed
 
+        Examples:
+            Get all incidents from the last 24 hours:
+                event_type_filters=["INCIDENT"], time_range="last 24 hours"
+
+            Get open critical events for a specific service:
+                entity_type="service", state="open", severity=10
+
+            Get events with specific problem text:
+                problem="memory", time_range="last 2 days"
+        """
         try:
             logger.debug(
-                f"[get_issues] Called with query: {query}, time_range: {time_range}, "
-                f"from_time: {from_time}, to_time: {to_time}, max_events: {max_events}"
+                f"[get_events] Called with entity_type={entity_type}, state={state}, "
+                f"time_range={time_range}, event_type_filters={event_type_filters}, entity_name={entity_name}, "
+                f"problem={problem}, severity={severity}"
             )
 
-            # Build time parameters
-            time_params = self._build_time_params(time_range, from_time, to_time)
-            from_time = time_params["from_time"]
-            to_time = time_params["to_time"]
+            # Validate event_type_filters if provided
+            if event_type_filters:
+                if not isinstance(event_type_filters, list):
+                    raise TypeError('event_type_filters must be a list')
 
-            try:
-                # Use the optimized without_preload_content approach for faster response
-                response_data = api_client.get_events_without_preload_content(
-                    **time_params["api_params"],
-                    filter_event_updates=filter_event_updates,
-                    exclude_triggered_before=exclude_triggered_before,
-                    event_type_filters=[EVENT_TYPE_ISSUE]
-                )
+                for event_type in event_type_filters:
+                    if not isinstance(event_type, str):
+                        raise TypeError('Each event type in event_type_filters must be a string')
 
-                # Check response status immediately
-                if response_data.status != 200:
-                    logger.error(f"[get_issues] API returned non-200 status: {response_data.status}")
-                    return {"error": f"Failed to get issue events: HTTP {response_data.status}"}
+                    event_type_upper = event_type.upper()
+                    if event_type_upper not in VALID_EVENT_TYPES:
+                        raise ValueError(
+                            f"Invalid event_type '{event_type}'. Must be one of: {', '.join(sorted(VALID_EVENT_TYPES))} (case-insensitive)"
+                        )
 
-                # Process the response data directly without additional parsing
-                response_text = response_data.data.decode('utf-8')
-                result = json.loads(response_text)
-
-                # Create a standardized result format
-                if isinstance(result, list):
-                    # Optimize events to reduce token usage
-                    total_count = len(result)
-                    limited_events = result[:max_events]
-                    optimized_events = [self._optimize_event_data(event) for event in limited_events]
-
-                    logger.debug(
-                        f"[get_issues] Retrieved {total_count} events, "
-                        f"returning {len(optimized_events)} after applying max_events limit"
-                    )
-
-                    result_dict = {
-                        "events": optimized_events,
-                        "events_returned": len(optimized_events),
-                        "total_events": total_count,
-                        "time_range": f"From {datetime.fromtimestamp(from_time/1000).strftime('%Y-%m-%d %H:%M:%S')} to {datetime.fromtimestamp(to_time/1000).strftime('%Y-%m-%d %H:%M:%S')}"
-                    }
-
-                    # Add pagination info if data was truncated
-                    if max_events and total_count > max_events:
-                        result_dict["pagination"] = {
-                            "truncated": True,
-                            "message": f"Showing {max_events} of {total_count} events to optimize response size. Use max_events parameter to adjust limit or add filters to narrow results.",
-                            "limit": max_events,
-                            "has_more": True
-                        }
-                else:
-                    result_dict = result
-
-                logger.debug(f"[get_issues] Successfully completed - returned {result_dict.get('events_returned', 0)} of {result_dict.get('total_events', 0)} events")
-                return result_dict
-            except Exception as api_error:
-                logger.error(f"[get_issues] API call failed - error: {api_error!s}", exc_info=True)
-                return {"error": f"Failed to get issue events: {api_error}"}
-        except Exception as e:
-            logger.error(f"[get_issues] Unexpected error: {e!s}", exc_info=True)
-            return {"error": f"Failed to get issue events: {e!s}"}
-
-    @with_header_auth(EventsApi)
-    async def get_incidents(self,
-                             query: Optional[str] = None,
-                             from_time: Optional[int] = None,
-                             to_time: Optional[int] = None,
-                             filter_event_updates: Optional[bool] = None,
-                             exclude_triggered_before: Optional[int] = None,
-                             max_events: Optional[int] = 50,
-                             size: Optional[int] = 100,
-                             time_range: Optional[str] = None,
-                             ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
-        """
-        Get incident events from Instana based on the provided parameters.
-
-        This tool retrieves incident events from Instana based on specified filters and time range.
-        Incidents are critical events that require immediate attention.
-
-        Examples:
-        Get all incident events from the last 24 hours:
-           - time_range: "last 24 hours"
-
-        Args:
-            query: Query string to filter events (optional)
-            from_time: Start timestamp in milliseconds since epoch (optional, defaults to 1 hour ago)
-            to_time: End timestamp in milliseconds since epoch (optional, defaults to now)
-            filter_event_updates: Whether to filter event updates (optional)
-            exclude_triggered_before: Exclude events triggered before this timestamp (optional)
-            max_events: Maximum number of events to process (default: 50)
-            size: Maximum number of events to return from API (default: 100)
-            time_range: Natural language time range like "last 24 hours", "last 2 days", "last week" (optional)
-            ctx: The MCP context (optional)
-            api_client: API client for testing (optional)
-
-        Returns:
-            Dictionary containing the list of incident events or error information
-        """
-
-        try:
-            logger.debug(f"get_incidents called with query={query}, time_range={time_range}, from_time={from_time}, to_time={to_time}, size={size}")
+                # Normalize to uppercase
+                event_type_filters = [et.upper() for et in event_type_filters]
 
             # Build time parameters
             time_params = self._build_time_params(time_range, from_time, to_time)
-            from_time = time_params["from_time"]
-            to_time = time_params["to_time"]
+            api_params = time_params["api_params"]
 
-            try:
-                # Use the optimized without_preload_content approach for faster response
-                response_data = api_client.get_events_without_preload_content(
-                    **time_params["api_params"],
-                    filter_event_updates=filter_event_updates,
-                    exclude_triggered_before=exclude_triggered_before,
-                    event_type_filters=[EVENT_TYPE_INCIDENT]
+            response_data = api_client.get_events_without_preload_content(
+                **api_params,
+                filter_event_updates=filter_event_updates,
+                exclude_triggered_before=exclude_triggered_before,
+                event_type_filters=event_type_filters or None,
+            )
+
+            if response_data.status != 200:
+                logger.error(f"API returned status {response_data.status}")
+                return {"error": f"HTTP {response_data.status}"}
+
+            result = json.loads(response_data.data.decode('utf-8'))
+
+            if not isinstance(result, list):
+                logger.warning("Unexpected response format - not a list")
+                return {"events": [], "error": "Unexpected response format from Instana"}
+
+            filtered_events = result
+
+            if entity_type or state or entity_name or problem or severity or query:
+                logger.debug(
+                    f"[get_events] Applying client-side filters - "
+                    f"entity_type={entity_type}, state={state}, entity_name={entity_name}, "
+                    f"problem={problem}, severity={severity}"
                 )
 
-                # Check response status immediately
-                if response_data.status != 200:
-                    return {"error": f"Failed to get incident events: HTTP {response_data.status}"}
+                def matches_event(event: dict) -> bool:
+                    if not isinstance(event, dict):
+                        return False
 
-                # Process the response data directly without additional parsing
-                response_text = response_data.data.decode('utf-8')
-                result = json.loads(response_text)
+                    if entity_type:
+                        requested_entity_type = entity_type.lower()
+                        actual_entity_type = event.get("entityType", "").lower()
 
-                # Create a standardized result format
-                if isinstance(result, list):
-                    # Optimize events to reduce token usage
-                    total_count = len(result)
-                    limited_events = result[:max_events]
-                    optimized_events = [self._optimize_event_data(event) for event in limited_events]
+                        if actual_entity_type != requested_entity_type:
+                            return False
 
-                    result_dict = {
-                        "events": optimized_events,
-                        "events_returned": len(optimized_events),
-                        "total_events": total_count,
-                        "time_range": f"From {datetime.fromtimestamp(from_time/1000).strftime('%Y-%m-%d %H:%M:%S')} to {datetime.fromtimestamp(to_time/1000).strftime('%Y-%m-%d %H:%M:%S')}"
-                    }
+                    if state:
+                        if event.get("state", "").lower() != state.lower():
+                            return False
 
-                    # Add pagination info if data was truncated
-                    if max_events and total_count > max_events:
-                        result_dict["pagination"] = {
-                            "truncated": True,
-                            "message": f"Showing {max_events} of {total_count} events to optimize response size. Use max_events parameter to adjust limit or add filters to narrow results.",
-                            "limit": max_events,
-                            "has_more": True
-                        }
-                else:
-                    result_dict = result
+                    if problem:
+                        if problem.lower() not in event.get("problem", "").lower() and \
+                           problem.lower() not in event.get("detail", "").lower():
+                            return False
 
-                logger.debug(f"Successfully retrieved {result_dict.get('events_returned', 0)} of {result_dict.get('total_events', 0)} incident events")
-                return result_dict
-            except Exception as api_error:
-                logger.error(f"API call failed: {api_error}", exc_info=True)
-                return {"error": f"Failed to get incident events: {api_error}"}
-        except Exception as e:
-            logger.error(f"Error in get_incidents: {e}", exc_info=True)
-            return {"error": f"Failed to get incident events: {e!s}"}
+                    if severity is not None:
+                        if severity not in (SEVERITY_CHANGE, SEVERITY_WARNING, SEVERITY_CRITICAL):
+                            raise ValueError(
+                                f"Invalid severity value. Allowed: {SEVERITY_CHANGE} (change), "
+                                f"{SEVERITY_WARNING} (warning), {SEVERITY_CRITICAL} (critical)"
+                            )
+                        if event.get("severity") != severity:
+                            return False
 
-    @with_header_auth(EventsApi)
-    async def get_changes(self,
-                             query: Optional[str] = None,
-                             from_time: Optional[int] = None,
-                             to_time: Optional[int] = None,
-                             filter_event_updates: Optional[bool] = None,
-                             exclude_triggered_before: Optional[int] = None,
-                             max_events: Optional[int] = 50,
-                             size: Optional[int] = 100,
-                             time_range: Optional[str] = None,
-                             ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
-        """
-        Get change events from Instana based on the provided parameters.
+                    if entity_name:
+                        entity_name_lower = entity_name.lower()
+                        if entity_name_lower not in event.get("entityName", "").lower() and \
+                           entity_name_lower not in event.get("entityLabel", "").lower():
+                            return False
 
-        This tool retrieves change events from Instana based on specified filters and time range.
-        Change events represent modifications to the system, such as deployments or configuration changes.
+                    if query:
+                        query_lower = query.lower()
+                        if query_lower not in str(event).lower():
+                            return False
 
-        Examples:
-        Get all change events from the last 24 hours:
-           - time_range: "last 24 hours"
+                    return True
 
-        Args:
-            query: Query string to filter events (optional)
-            from_time: Start timestamp in milliseconds since epoch (optional, defaults to 1 hour ago)
-            to_time: End timestamp in milliseconds since epoch (optional, defaults to now)
-            filter_event_updates: Whether to filter event updates (optional)
-            exclude_triggered_before: Exclude events triggered before this timestamp (optional)
-            max_events: Maximum number of events to process (default: 50)
-            size: Maximum number of events to return from API (default: 100)
-            time_range: Natural language time range like "last 24 hours", "last 2 days", "last week" (optional)
-            ctx: The MCP context (optional)
-            api_client: API client for testing (optional)
+                filtered_events = [e for e in result if matches_event(e)]
 
-        Returns:
-            Dictionary containing the list of change events or error information
-        """
-
-        try:
-            logger.debug(f"get_changes called with query={query}, time_range={time_range}, from_time={from_time}, to_time={to_time}, size={size}")
-
-            # Build time parameters
-            time_params = self._build_time_params(time_range, from_time, to_time)
-            from_time = time_params["from_time"]
-            to_time = time_params["to_time"]
-
-            try:
-                # Use the optimized without_preload_content approach for faster response
-                response_data = api_client.get_events_without_preload_content(
-                    **time_params["api_params"],
-                    filter_event_updates=filter_event_updates,
-                    exclude_triggered_before=exclude_triggered_before,
-                    event_type_filters=[EVENT_TYPE_CHANGE]
+                logger.debug(
+                    f"[get_events] After client-side filtering: {len(filtered_events)} events remain "
+                    f"(entity_type={entity_type}, state={state}, entity_name={entity_name}, "
+                    f"problem={problem}, severity={severity})"
                 )
 
-                # Check response status immediately
-                if response_data.status != 200:
-                    return {"error": f"Failed to get change events: HTTP {response_data.status}"}
+            limited = filtered_events[:max_events]
+            optimized = [self._optimize_event_data(e) for e in limited]
 
-                # Process the response data directly without additional parsing
-                response_text = response_data.data.decode('utf-8')
-                result = json.loads(response_text)
+            return {
+                "events": optimized,
+                "events_returned": len(optimized),
+                "total_events": len(filtered_events),
+                "time_range": time_params.get("human_readable", "N/A")
+            }
 
-                # Create a standardized result format
-                if isinstance(result, list):
-                    # Optimize events to reduce token usage
-                    total_count = len(result)
-                    limited_events = result[:max_events]
-                    optimized_events = [self._optimize_event_data(event) for event in limited_events]
-
-                    result_dict = {
-                        "events": optimized_events,
-                        "events_returned": len(optimized_events),
-                        "total_events": total_count,
-                        "time_range": f"From {datetime.fromtimestamp(from_time/1000).strftime('%Y-%m-%d %H:%M:%S')} to {datetime.fromtimestamp(to_time/1000).strftime('%Y-%m-%d %H:%M:%S')}"
-                    }
-
-                    # Add pagination info if data was truncated
-                    if max_events and total_count > max_events:
-                        result_dict["pagination"] = {
-                            "truncated": True,
-                            "message": f"Showing {max_events} of {total_count} events to optimize response size. Use max_events parameter to adjust limit or add filters to narrow results.",
-                            "limit": max_events,
-                            "has_more": True
-                        }
-                else:
-                    result_dict = result
-
-                logger.debug(f"Successfully retrieved {result_dict.get('events_returned', 0)} of {result_dict.get('total_events', 0)} change events")
-                return result_dict
-            except Exception as api_error:
-                logger.error(f"API call failed: {api_error}", exc_info=True)
-                return {"error": f"Failed to get change events: {api_error}"}
         except Exception as e:
-            logger.error(f"Error in get_changes: {e}", exc_info=True)
-            return {"error": f"Failed to get change events: {e!s}"}
+            logger.error(f"[get_events] Error: {e}", exc_info=True)
+            return {"error": f"Failed to get events: {e!s}"}
 
     @with_header_auth(EventsApi)
     async def get_events_by_ids(
         self,
         event_ids: Union[List[str], str],
-        ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+        ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get events by their IDs.
         This tool retrieves multiple events at once using their unique IDs.

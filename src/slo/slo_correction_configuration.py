@@ -9,7 +9,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp import Context
 from instana_client.models.correction_configuration import CorrectionConfiguration
 from instana_client.models.correction_scheduling import CorrectionScheduling
 
@@ -162,8 +161,8 @@ class SLOCorrectionMCPTools(BaseInstanaClient):
         id: Optional[List[str]]= None,
         slo_id: Optional[List[str]] = None,
         refresh: Optional[bool] = None,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Get all SLO correction window configurations with optional filtering."""
         try:
@@ -198,7 +197,7 @@ class SLOCorrectionMCPTools(BaseInstanaClient):
     async def get_correction_by_id(self,
        id: str,
        ctx = None,
-       api_client: Any = None
+       api_client=None
     ) -> Dict[str, Any]:
         """Get a specific SLO correction window configuration by ID."""
         try:
@@ -222,8 +221,8 @@ class SLOCorrectionMCPTools(BaseInstanaClient):
     @with_header_auth(SLOCorrectionConfigurationsApi)
     async def create_correction(self,
         payload: Union[Dict[str, Any], str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Create new SLO correction window configuration."""
         try:
@@ -371,8 +370,8 @@ class SLOCorrectionMCPTools(BaseInstanaClient):
     @with_header_auth(SLOCorrectionConfigurationsApi)
     async def delete_correction(self,
         id: str,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Delete SLO correction window configuration."""
         try:

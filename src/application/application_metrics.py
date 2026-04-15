@@ -8,7 +8,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastmcp import Context
 from mcp.types import ToolAnnotations
 
 from src.prompts import mcp
@@ -54,7 +53,7 @@ class ApplicationMetricsMCPTools(BaseInstanaClient):
                                               application_id: Optional[str] = None,
                                               service_id: Optional[str] = None,
                                               endpoint_id: Optional[str] = None,
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get application data metrics using the v2 API.
 
@@ -188,7 +187,7 @@ class ApplicationMetricsMCPTools(BaseInstanaClient):
     #                                   metrics: Optional[List[Dict[str, str]]] = None,
     #                                   time_frame: Optional[Dict[str, int]] = None,
     #                                   fill_time_series: Optional[bool] = True,
-    #                                   ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    #                                   ctx=None, api_client=None) -> Dict[str, Any]:
     #     """
     #     Get metrics for a specific application.
 
@@ -269,7 +268,7 @@ class ApplicationMetricsMCPTools(BaseInstanaClient):
     #                                 metrics: Optional[List[Dict[str, str]]] = None,
     #                                 time_frame: Optional[Dict[str, int]] = None,
     #                                 fill_time_series: Optional[bool] = True,
-    #                                 ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    #                                 ctx=None, api_client=None) -> Dict[str, Any]:
     #     """
     #     Get metrics for a specific endpoint.
 
@@ -351,7 +350,7 @@ class ApplicationMetricsMCPTools(BaseInstanaClient):
     #                                time_frame: Optional[Dict[str, int]] = None,
     #                                fill_time_series: Optional[bool] = True,
     #                                include_snapshot_ids: Optional[bool] = False,
-    #                                ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    #                                ctx=None, api_client=None) -> Dict[str, Any]:
     #     """
     #     Get metrics for a specific service.
 

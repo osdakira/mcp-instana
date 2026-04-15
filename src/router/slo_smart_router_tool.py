@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 from fastmcp import Context
 from mcp.types import ToolAnnotations
 
-from src.core.timestamp_utils import convert_to_timestamp
+from src.core.timestamp_utils import convert_datetime_param_with_required_timezone
 from src.core.utils import BaseInstanaClient, register_as_tool
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
         resource_type: str,
         operation: str,
         params: Optional[Dict[str, Any]] = None,
-        ctx: Optional[Context] = None
+        ctx: Optional[Context] = None,
     ) -> Dict[str, Any]:
         """
         Unified SLO manager for configurations, reports, alerts, and corrections.
@@ -507,58 +507,39 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
                         "operation": operation
                     }
 
-                # Handle datetime string conversion for var_from and to parameters
-                # If the value is a string (datetime), convert it to timestamp
-                # If it's already a number (timestamp), use it as-is
-                if var_from is not None and isinstance(var_from, str):
-                    logger.debug(f"[_handle_report] Converting var_from datetime string: {var_from}")
-                    # Check if timezone is provided
-                    if "|" not in var_from:
-                        # Elicit timezone from user
-                        return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want to start the report from '{var_from}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for the start time '{var_from}'?"
-                        }
+                # Convert datetime strings to timestamps for var_from and to parameters
+                # These parameters require explicit timezone specification
+                var_from_result = convert_datetime_param_with_required_timezone(var_from, "var_from")
 
-                    # Extract timezone if provided in format "datetime|timezone"
-                    datetime_str, timezone = var_from.split("|", 1)
+                # Check for elicitation or error
+                if "elicitation_needed" in var_from_result:
+                    return var_from_result
+                if "error" in var_from_result:
+                    return {
+                        "error": var_from_result["error"],
+                        "resource_type": RESOURCE_TYPE_REPORT,
+                        "operation": operation
+                    }
 
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert var_from datetime: {conversion_result['error']}",
-                            "resource_type": RESOURCE_TYPE_REPORT,
-                            "operation": operation
-                        }
-                    var_from = str(conversion_result["timestamp"])  # Convert to string as API expects StrictStr
-                    logger.info(f"[_handle_report] Converted var_from to timestamp string: {var_from}")
+                # Convert to string as API expects StrictStr
+                if var_from_result["converted"]:
+                    var_from = str(var_from_result["value"])
 
-                if to is not None and isinstance(to, str):
-                    logger.debug(f"[_handle_report] Converting to datetime string: {to}")
-                    # Check if timezone is provided
-                    if "|" not in to:
-                        # Elicit timezone from user
-                        return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want to end the report at '{to}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for the end time '{to}'?"
-                        }
+                to_result = convert_datetime_param_with_required_timezone(to, "to")
 
-                    # Extract timezone if provided in format "datetime|timezone"
-                    datetime_str, timezone = to.split("|", 1)
+                # Check for elicitation or error
+                if "elicitation_needed" in to_result:
+                    return to_result
+                if "error" in to_result:
+                    return {
+                        "error": to_result["error"],
+                        "resource_type": RESOURCE_TYPE_REPORT,
+                        "operation": operation
+                    }
 
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert to datetime: {conversion_result['error']}",
-                            "resource_type": RESOURCE_TYPE_REPORT,
-                            "operation": operation
-                        }
-                    to = str(conversion_result["timestamp"])  # Convert to string as API expects StrictStr
-                    logger.info(f"[_handle_report] Converted to to timestamp string: {to}")
+                # Convert to string as API expects StrictStr
+                if to_result["converted"]:
+                    to = str(to_result["value"])
 
                 logger.debug(f"[_handle_report] Routing to get_slo_report with slo_id: {slo_id}, var_from: {var_from}, to: {to}")
                 result = await self.slo_report_client.get_slo_report(
@@ -713,33 +694,32 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
                         "user_prompt": "When should the correction window start? Please provide the date, time, and timezone."
                     }
 
-                # Handle datetime string conversion for startTime
-                if isinstance(scheduling["startTime"], str):
-                    logger.debug(f"[_handle_correction] Converting startTime datetime string: {scheduling['startTime']}")
+                # Convert datetime string to timestamp for startTime (requires timezone)
+                startTime_result = convert_datetime_param_with_required_timezone(
+                    scheduling["startTime"],
+                    "startTime"
+                )
 
-                    # Check if timezone is provided
-                    if "|" not in scheduling["startTime"]:
-                        # Elicit timezone from user
+                # Check for elicitation or error
+                if "elicitation_needed" in startTime_result:
+                    return startTime_result
+                if "error" in startTime_result:
+                    return {
+                        "error": startTime_result["error"],
+                        "resource_type": RESOURCE_TYPE_CORRECTION,
+                        "operation": operation
+                    }
+
+                # Store as integer milliseconds - the correction client will convert to datetime
+                if startTime_result.get("converted"):
+                    if "value" in startTime_result:
+                        scheduling["startTime"] = startTime_result["value"]
+                    else:
                         return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want the correction window to start at '{scheduling['startTime']}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for '{scheduling['startTime']}'?"
-                        }
-
-                    # Extract timezone
-                    datetime_str, timezone = scheduling["startTime"].split("|", 1)
-
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert startTime datetime: {conversion_result['error']}",
+                            "error": "Failed to convert startTime: missing value",
                             "resource_type": RESOURCE_TYPE_CORRECTION,
                             "operation": operation
                         }
-                    # Store as integer milliseconds - the correction client will convert to datetime
-                    scheduling["startTime"] = conversion_result["timestamp"]
-                    logger.info(f"[_handle_correction] Converted startTime to timestamp: {scheduling['startTime']}")
 
                 result = await self.slo_correction_client.create_correction(payload=payload, ctx=ctx)
             elif operation == CORRECTION_OP_UPDATE:
@@ -754,31 +734,32 @@ class SLOSmartRouterMCPTool(BaseInstanaClient):
 
                     # Check if startTime exists and is a string (datetime)
                     if "startTime" in scheduling and isinstance(scheduling["startTime"], str):
-                        logger.debug(f"[_handle_correction] Converting startTime datetime string: {scheduling['startTime']}")
+                        # Convert datetime string to timestamp for startTime (requires timezone)
+                        startTime_result = convert_datetime_param_with_required_timezone(
+                            scheduling["startTime"],
+                            "startTime"
+                        )
 
-                        # Check if timezone is provided
-                        if "|" not in scheduling["startTime"]:
-                            # Elicit timezone from user
+                        # Check for elicitation or error
+                        if "elicitation_needed" in startTime_result:
+                            return startTime_result
+                        if "error" in startTime_result:
                             return {
-                                "elicitation_needed": True,
-                                "message": f"I see you want to update the correction window start time to '{scheduling['startTime']}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                                "missing_parameters": ["timezone"],
-                                "user_prompt": f"What timezone should be used for '{scheduling['startTime']}'?"
-                            }
-
-                        # Extract timezone if provided in format "datetime|timezone"
-                        datetime_str, timezone = scheduling["startTime"].split("|", 1)
-
-                        conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
-                        if "error" in conversion_result:
-                            return {
-                                "error": f"Failed to convert startTime datetime: {conversion_result['error']}",
+                                "error": startTime_result["error"],
                                 "resource_type": RESOURCE_TYPE_CORRECTION,
                                 "operation": operation
                             }
+
                         # Store as integer milliseconds - the correction client will convert to datetime
-                        scheduling["startTime"] = conversion_result["timestamp"]
-                        logger.info(f"[_handle_correction] Converted startTime to timestamp: {scheduling['startTime']}")
+                        if startTime_result.get("converted"):
+                            if "value" in startTime_result:
+                                scheduling["startTime"] = startTime_result["value"]
+                            else:
+                                return {
+                                    "error": "Failed to convert startTime: missing value",
+                                    "resource_type": RESOURCE_TYPE_CORRECTION,
+                                    "operation": operation
+                                }
 
                 result = await self.slo_correction_client.update_correction(
                     id=params["id"],

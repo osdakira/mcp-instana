@@ -14,6 +14,9 @@ sys.modules['dotenv'] = MagicMock()
 sys.modules['fastmcp'] = MagicMock()
 sys.modules['src.prompts.prompt_loader'] = MagicMock()
 
+mock_src_core = MagicMock()
+mock_src_core_utils = MagicMock()
+
 # Mock instana_client dependencies
 sys.modules['instana_client'] = MagicMock()
 sys.modules['instana_client.api'] = MagicMock()

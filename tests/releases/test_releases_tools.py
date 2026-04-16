@@ -60,13 +60,34 @@ def mock_with_header_auth(api_class, allow_mock=False):
     return decorator
 
 # Create mock modules and classes
-sys.modules['instana_client'] = MagicMock()
-sys.modules['instana_client.api'] = MagicMock()
-sys.modules['instana_client.api.releases_api'] = MagicMock()
-sys.modules['instana_client.models'] = MagicMock()
-sys.modules['instana_client.models.release'] = MagicMock()
-sys.modules['instana_client.configuration'] = MagicMock()
-sys.modules['instana_client.api_client'] = MagicMock()
+_original_instana_modules = {
+    name: sys.modules.get(name)
+    for name in [
+        'instana_client',
+        'instana_client.api',
+        'instana_client.api.releases_api',
+        'instana_client.models',
+        'instana_client.models.release',
+        'instana_client.configuration',
+        'instana_client.api_client',
+    ]
+}
+
+mock_instana_client = MagicMock()
+mock_instana_api_pkg = MagicMock()
+mock_instana_models_pkg = MagicMock()
+mock_instana_configuration_pkg = MagicMock()
+mock_instana_api_client_pkg = MagicMock()
+mock_instana_releases_api_pkg = MagicMock()
+mock_instana_release_model_pkg = MagicMock()
+
+sys.modules['instana_client'] = mock_instana_client
+sys.modules['instana_client.api'] = mock_instana_api_pkg
+sys.modules['instana_client.api.releases_api'] = mock_instana_releases_api_pkg
+sys.modules['instana_client.models'] = mock_instana_models_pkg
+sys.modules['instana_client.models.release'] = mock_instana_release_model_pkg
+sys.modules['instana_client.configuration'] = mock_instana_configuration_pkg
+sys.modules['instana_client.api_client'] = mock_instana_api_client_pkg
 
 # Set up mock classes
 mock_configuration = MagicMock()
@@ -78,15 +99,21 @@ mock_release = MagicMock()
 mock_releases_api.__name__ = "ReleasesApi"
 mock_release.__name__ = "Release"
 
-sys.modules['instana_client.configuration'].Configuration = mock_configuration
-sys.modules['instana_client.api_client'].ApiClient = mock_api_client
-sys.modules['instana_client.api.releases_api'].ReleasesApi = mock_releases_api
-sys.modules['instana_client.models.release'].Release = mock_release
+mock_instana_configuration_pkg.Configuration = mock_configuration
+mock_instana_api_client_pkg.ApiClient = mock_api_client
+mock_instana_releases_api_pkg.ReleasesApi = mock_releases_api
+mock_instana_release_model_pkg.Release = mock_release
 
 # Patch the with_header_auth decorator
 with patch('src.core.utils.with_header_auth', mock_with_header_auth):
     # Import the class to test
     from src.releases.releases_tools import ReleasesMCPTools
+
+for _module_name, _original_module in _original_instana_modules.items():
+    if _original_module is not None:
+        sys.modules[_module_name] = _original_module
+    else:
+        sys.modules.pop(_module_name, None)
 
 
 class TestReleasesMCPTools(unittest.TestCase):

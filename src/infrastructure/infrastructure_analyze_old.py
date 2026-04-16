@@ -8,8 +8,6 @@ import logging
 import sys
 from typing import Any, Dict, Optional, Union
 
-from fastmcp import Context
-
 # Import the necessary classes from the SDK
 try:
     from instana_client.api.infrastructure_analyze_api import (
@@ -58,7 +56,7 @@ class InfrastructureAnalyzeMCPTools(BaseInstanaClient):
     @with_header_auth(InfrastructureAnalyzeApi)
     async def get_available_metrics(self,
                                     payload: Optional[Union[Dict[str, Any], str]] = None,
-                                    ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                    ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get available metrics for infrastructure monitoring.
 
@@ -193,7 +191,7 @@ class InfrastructureAnalyzeMCPTools(BaseInstanaClient):
     @with_header_auth(InfrastructureAnalyzeApi)
     async def get_entities(self,
                            payload: Optional[Union[Dict[str, Any], str]] = None,
-                           ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                           ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get infrastructure entities for a given entity type along with requested metrics.
 
@@ -307,7 +305,7 @@ class InfrastructureAnalyzeMCPTools(BaseInstanaClient):
     @with_header_auth(InfrastructureAnalyzeApi)
     async def get_aggregated_entity_groups(self,
                                            payload: Optional[Union[Dict[str, Any], str]] = None,
-                                           ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                           ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get grouped infrastructure entities with aggregated metrics.
 
@@ -507,7 +505,7 @@ class InfrastructureAnalyzeMCPTools(BaseInstanaClient):
     @with_header_auth(InfrastructureAnalyzeApi)
     async def get_available_plugins(self,
                                     payload: Optional[Union[Dict[str, Any], str]] = None,
-                                    ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                    ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get available plugins for infrastructure monitoring.
 

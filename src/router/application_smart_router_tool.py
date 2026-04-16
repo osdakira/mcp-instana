@@ -11,7 +11,10 @@ from typing import Any, Dict, List, Optional, Union
 from fastmcp import Context
 from mcp.types import ToolAnnotations
 
-from src.core.timestamp_utils import convert_to_timestamp
+from src.core.timestamp_utils import (
+    convert_datetime_param,
+    convert_nested_datetime_param,
+)
 from src.core.utils import BaseInstanaClient, register_as_tool
 
 logger = logging.getLogger(__name__)
@@ -608,46 +611,38 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
                 "valid_operations": valid_operations,
             }
 
-        # Handle datetime string conversion for timeFrame.to in payload
-        if "payload" in params and isinstance(params["payload"], dict):
+        # Convert datetime string for timeFrame.to in payload
+        if "payload" in params and isinstance(params.get("payload"), dict):
             payload = params["payload"]
-
-            if "timeFrame" in payload and isinstance(payload["timeFrame"], dict):
-                time_frame = payload["timeFrame"]
-
-                if "to" in time_frame and isinstance(time_frame["to"], str):
-                    result = self._convert_datetime_field(
-                        time_frame["to"],
-                        "timeFrame.to",
-                        "analyze",
-                        operation
-                    )
-
-                    # Check if conversion failed or needs elicitation
-                    if "elicitation_needed" in result or "error" in result:
-                        return result
-
-                    # Update the field with converted timestamp
-                    time_frame["to"] = result["timestamp"]
-
-        # Handle datetime string conversion for ingestionTime in get_trace_details
-        if operation == "get_trace_details" and "ingestionTime" in params:
-            ingestion_time = params["ingestionTime"]
-
-            if isinstance(ingestion_time, str):
-                result = self._convert_datetime_field(
-                    ingestion_time,
-                    "ingestionTime",
-                    "analyze",
-                    operation
+            if "timeFrame" in payload and isinstance(payload.get("timeFrame"), dict):
+                conversion_result = convert_nested_datetime_param(
+                    payload, "timeFrame", "to", default_timezone="UTC"
                 )
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "operation": operation,
+                        "resource_type": "analyze"
+                    }
+                # Update payload with converted params
+                params["payload"] = conversion_result["params"]
 
-                # Check if conversion failed
-                if "error" in result:
-                    return result
-
-                # Update with converted timestamp (milliseconds)
-                params["ingestionTime"] = result["timestamp"]
+        # Convert datetime string for ingestionTime in get_trace_details
+        if operation == "get_trace_details" and "ingestionTime" in params:
+            conversion_result = convert_datetime_param(
+                params["ingestionTime"],
+                "ingestionTime",
+                default_timezone="UTC",
+                output_unit="seconds"
+            )
+            if "error" in conversion_result:
+                return {
+                    "error": conversion_result["error"],
+                    "operation": operation,
+                    "resource_type": "analyze"
+                }
+            if conversion_result["converted"]:
+                params["ingestionTime"] = conversion_result["value"]
 
         # Route to the analyze client with params
         result = await self.app_analyze_client.execute_analyze_operation(
@@ -659,49 +654,6 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             "operation": operation,
             "results": result,
         }
-
-    def _convert_datetime_field(
-        self,
-        field_value: str,
-        field_name: str,
-        resource_type: str,
-        operation: str
-    ) -> Dict[str, Any]:
-        """
-        Convert datetime string field to timestamp with timezone validation.
-
-        Args:
-            field_value: The datetime string value to convert
-            field_name: Name of the field being converted (for error messages)
-            resource_type: Resource type for error context
-            operation: Operation for error context
-
-        Returns:
-            Dict with either converted timestamp or elicitation/error response
-        """
-        logger.debug(f"[_convert_datetime_field] Converting {field_name} datetime string: {field_value}")
-
-        # Check if timezone is provided, default to UTC if not
-        if "|" not in field_value:
-            datetime_str = field_value
-            timezone = "UTC"
-            logger.debug(f"[_convert_datetime_field] No timezone specified for {field_name}, defaulting to UTC")
-        else:
-            # Extract timezone if provided in format "datetime|timezone"
-            datetime_str, timezone = field_value.split("|", 1)
-
-        conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
-        if "error" in conversion_result:
-            return {
-                "error": f"Failed to convert {field_name} datetime: {conversion_result['error']}",
-                "resource_type": resource_type,
-                "operation": operation
-            }
-
-        timestamp = conversion_result["timestamp"]
-        logger.info(f"[_convert_datetime_field] Converted {field_name} to timestamp: {timestamp}")
-
-        return {"success": True, "timestamp": timestamp}
 
     async def _handle_catalog(
         self,

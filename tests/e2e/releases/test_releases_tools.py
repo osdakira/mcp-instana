@@ -2,6 +2,9 @@
 E2E tests for Releases MCP Tools
 """
 
+import importlib
+import sys
+import types
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,7 +17,41 @@ class ApiException(Exception):
         self.reason = reason
         super().__init__(*args, **kwargs)
 
-from src.releases.releases_tools import ReleasesMCPTools
+
+api_module_name = "instana_client.api.releases_api"
+models_module_name = "instana_client.models.release"
+
+if api_module_name not in sys.modules:
+    stub_api_module = types.ModuleType(api_module_name)
+
+    class ReleasesApi:
+        pass
+
+    stub_api_module.ReleasesApi = ReleasesApi
+    sys.modules[api_module_name] = stub_api_module
+
+if models_module_name not in sys.modules:
+    stub_models_module = types.ModuleType(models_module_name)
+
+    class Release:
+        @classmethod
+        def from_dict(cls, data):
+            instance = cls()
+            for key, value in data.items():
+                setattr(instance, key, value)
+            return instance
+
+    stub_models_module.Release = Release
+    sys.modules[models_module_name] = stub_models_module
+
+def create_releases_client(instana_credentials):
+    module = importlib.import_module("src.releases.releases_tools")
+    module = importlib.reload(module)
+    releases_mcp_tools = module.ReleasesMCPTools
+    return releases_mcp_tools(
+        read_token=instana_credentials["api_token"],
+        base_url=instana_credentials["base_url"]
+    )
 
 
 class TestReleasesMCPToolsE2E:
@@ -26,10 +63,7 @@ class TestReleasesMCPToolsE2E:
         """Test initialization of the ReleasesMCPTools client."""
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Verify the client was created successfully
         assert client is not None
@@ -57,10 +91,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.get_all_releases(api_client=mock_api_client)
@@ -94,10 +125,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method with time range
         result = await client.get_all_releases(
@@ -136,10 +164,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method with name filter
         result = await client.get_all_releases(
@@ -173,10 +198,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method with pagination - page 1
         result = await client.get_all_releases(
@@ -215,10 +237,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test page 2
         result = await client.get_all_releases(
@@ -267,10 +286,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test with time range, name filter, and pagination
         result = await client.get_all_releases(
@@ -304,10 +320,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test with invalid page number
         result = await client.get_all_releases(
@@ -340,10 +353,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.side_effect = Exception("API Error")
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.get_all_releases(api_client=mock_api_client)
@@ -374,10 +384,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_release_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.get_release(
@@ -406,10 +413,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_release_without_preload_content.side_effect = Exception("API Error")
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.get_release(
@@ -443,10 +447,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.post_release_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.create_release(
@@ -477,10 +478,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.post_release_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method with services
         result = await client.create_release(
@@ -514,10 +512,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.put_release_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.update_release(
@@ -546,10 +541,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.delete_release_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.delete_release(
@@ -578,10 +570,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.delete_release_without_preload_content.side_effect = Exception("API Error")
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test the method
         result = await client.delete_release(
@@ -615,10 +604,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test with lowercase filter
         result = await client.get_all_releases(
@@ -650,10 +636,7 @@ class TestReleasesMCPToolsE2E:
         mock_api_client.get_all_releases_without_preload_content.return_value = mock_response
 
         # Create the client
-        client = ReleasesMCPTools(
-            read_token=instana_credentials["api_token"],
-            base_url=instana_credentials["base_url"]
-        )
+        client = create_releases_client(instana_credentials)
 
         # Test without pagination
         result = await client.get_all_releases(api_client=mock_api_client)

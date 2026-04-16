@@ -8,7 +8,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastmcp import Context
 from mcp.types import ToolAnnotations
 
 from src.prompts import mcp
@@ -43,8 +42,8 @@ class ApplicationResourcesMCPTools(BaseInstanaClient):
         name_filter: Optional[str] = None,
         window_size: Optional[int] = None,
         to_time: Optional[int] = None,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Internal method to get applications from Application Resources API.
@@ -103,7 +102,7 @@ class ApplicationResourcesMCPTools(BaseInstanaClient):
     #                                     page: Optional[int] = None,
     #                                     page_size: Optional[int] = None,
     #                                     application_boundary_scope: Optional[str] = None,
-    #                                     ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    #                                     ctx=None, api_client=None) -> Dict[str, Any]:
     #     """
     #     Get endpoints for all services from Instana. Use this API endpoint if one wants to retrieve a list of Endpoints. A use case could be to view the endpoint id of an Endpoint.
     #     Retrieve a list of application endpoints from Instana. This tool is useful when you need to get information about endpoints across services in your application.
@@ -194,7 +193,7 @@ class ApplicationResourcesMCPTools(BaseInstanaClient):
     #                                    page_size: Optional[int] = None,
     #                                    application_boundary_scope: Optional[str] = None,
     #                                    include_snapshot_ids: Optional[bool] = None,
-    #                                    ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    #                                    ctx=None, api_client=None) -> Dict[str, Any]:
     #     """
     #     Retrieve a list of services within application perspectives from Instana. This tool is useful when you need to get information about all services in your monitored applications.
     #     You can filter by service name and other parameters to narrow down results. Use this when you want to see what services exist in your application,
@@ -315,7 +314,7 @@ class ApplicationResourcesMCPTools(BaseInstanaClient):
     #                            page: Optional[int] = None,
     #                            page_size: Optional[int] = None,
     #                            application_boundary_scope: Optional[str] = None,
-    #                            ctx: Optional[Context] = None, api_client: Any = None) -> List[str]:
+    #                            ctx=None, api_client=None) -> List[str]:
     #     """
     #     Retrieve a list of Application Perspectives from Instana. This tool is useful when you need to get information about any one application perspective in Instana.
     #     You can filter by application name and other parameters to narrow down results. Use this tool when you want to see what application perspectives exist, understand their IDs,
@@ -397,7 +396,7 @@ class ApplicationResourcesMCPTools(BaseInstanaClient):
     #                        page: Optional[int] = None,
     #                        page_size: Optional[int] = None,
     #                        include_snapshot_ids: Optional[bool] = None,
-    #                        ctx: Optional[Context] = None, api_client: Any = None) -> str:
+    #                        ctx=None, api_client=None) -> str:
     #     """
     #     Retrieve a list of services from Instana. A use case could be to view the service id, or details,or information of a Service.
     #     This tool is useful when you need to get information about all services across your monitored environment,regardless of which application perspective they belong to.

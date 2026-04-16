@@ -57,83 +57,59 @@ class EventsPrompts:
 
     @auto_register_prompt
     @staticmethod
-    def get_issues(
-        query: Optional[str] = None,
+    def get_events_by_severity_and_state(
         from_time: Optional[int] = None,
         to_time: Optional[int] = None,
-        filter_event_updates: Optional[bool] = None,
-        exclude_triggered_before: Optional[int] = None,
+        state: Optional[str] = None,
+        severity: Optional[int] = None,
         event_type_filters: Optional[list[str]] = None,
-        max_events: Optional[int] = 50,
-        size: Optional[int] = 100,
-        time_range: Optional[str] = None
+        max_events: Optional[int] = 50
     ) -> str:
-        """Get all issues within a specified time range"""
+        """Show me all closed issues with severity higher than 5, group by metrics, for Apr 22 from 10 to 11 am """
         return f"""
-        Get all events:
-        - Query: {query or '(not specified)'}
-        - From time: {from_time or '(default: 1 hour ago)'}
-        - To time: {to_time or '(default: current time)'}
-        - Size: {size}
+        Get events:
+        - From time: {from_time or 1745383800000} (Apr 22, 2025 10:00 AM)
+        - To time: {to_time or 1745387400000} (Apr 22, 2025 11:00 AM)
+        - State: {state or 'closed'}
+        - Severity: {severity or 10} (critical)
+        - Event type filters: {event_type_filters or '["ISSUE"]'}
         - Max events: {max_events}
-        - Time range: {time_range or '(not specified)'}
-        - Filter event updates: {filter_event_updates or 'False'}
-        - Exclude triggered before: {exclude_triggered_before or 'None'}
-        - Event type filters: {event_type_filters or 'None'}
         """
 
     @auto_register_prompt
     @staticmethod
-    def get_incidents(
-        query: Optional[str] = None,
-        from_time: Optional[int] = None,
-        to_time: Optional[int] = None,
-        filter_event_updates: Optional[bool] = None,
-        exclude_triggered_before: Optional[int] = None,
+    def get_events_by_entity_and_problem(
+        time_range: Optional[str] = None,
+        entity_name: Optional[str] = None,
+        problem: Optional[str] = None,
         event_type_filters: Optional[list[str]] = None,
-        max_events: Optional[int] = 50,
-        size: Optional[int] = 100,
-        time_range: Optional[str] = None
+        max_events: Optional[int] = 50
     ) -> str:
-        """Get all incidents within a specified time range"""
+        """Show me details for CRI-O Container issues generated in the last 45 min that had "high error rate" problem"""
         return f"""
-        Get all events:
-        - Query: {query or '(not specified)'}
-        - From time: {from_time or '(default: 1 hour ago)'}
-        - To time: {to_time or '(default: current time)'}
-        - Size: {size}
+        Get events:
+        - Time range: {time_range or 'last 45 minutes'}
+        - Entity name: {entity_name or 'CRI-O Container'}
+        - Problem: {problem or 'high error rate'}
+        - Event type filters: {event_type_filters or '["ISSUE"]'}
         - Max events: {max_events}
-        - Time range: {time_range or '(not specified)'}
-        - Filter event updates: {filter_event_updates or 'False'}
-        - Exclude triggered before: {exclude_triggered_before or 'None'}
-        - Event type filters: {event_type_filters or 'None'}
         """
 
     @auto_register_prompt
     @staticmethod
-    def get_changes(
-        query: Optional[str] = None,
-        from_time: Optional[int] = None,
-        to_time: Optional[int] = None,
-        filter_event_updates: Optional[bool] = None,
-        exclude_triggered_before: Optional[int] = None,
+    def get_events_by_entity_type_and_event_type(
+        time_range: Optional[str] = None,
+        entity_type: Optional[str] = None,
         event_type_filters: Optional[list[str]] = None,
-        max_events: Optional[int] = 50,
-        size: Optional[int] = 100,
-        time_range: Optional[str] = None
+        max_events: Optional[int] = 50
     ) -> str:
-        """Get all changes within a specified time range"""
+        """Show me application incidents from the last week grouped by problem and sorted by severity"""
         return f"""
-        Get all events:
-        - Query: {query or '(not specified)'}
-        - From time: {from_time or '(default: 1 hour ago)'}
-        - To time: {to_time or '(default: current time)'}
-        - Size: {size}
+        Get events:
+        - Time range: {time_range or 'last week'}
+        - Entity type: {entity_type or 'application'}
+        - Event type filters: {event_type_filters or '["INCIDENT"]'}
         - Max events: {max_events}
-        - Time range: {time_range or '(not specified)'}
-        - Filter event updates: {filter_event_updates or 'False'}
-        - Exclude triggered before: {exclude_triggered_before or 'None'}
-        - Event type filters: {event_type_filters or 'None'}
         """
 
     @auto_register_prompt
@@ -154,8 +130,8 @@ class EventsPrompts:
             ('get_event', cls.get_event),
             ('get_kubernetes_info_events', cls.get_kubernetes_info_events),
             ('get_agent_monitoring_events', cls.get_agent_monitoring_events),
-            ('get_issues', cls.get_issues),
-            ('get_incidents', cls.get_incidents),
-            ('get_changes', cls.get_changes),
+            ('get_events_by_severity_and_state', cls.get_events_by_severity_and_state),
+            ('get_events_by_entity_and_problem', cls.get_events_by_entity_and_problem),
+            ('get_events_by_entity_type_and_event_type', cls.get_events_by_entity_type_and_event_type),
             ('get_events_by_ids', cls.get_events_by_ids),
         ]

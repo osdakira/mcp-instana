@@ -24,10 +24,10 @@ class InfrastructureAnalyzePrompts:
         return f"""
         Get available infrastructure metrics:
         - Type: {type}
-        - Query: {query or 'None'}
-        - From: {var_from or 'None'}
-        - To: {to or 'None'}
-        - Window size: {windowSize or 'None'}
+        - Query: {query if query is not None else 'None'}
+        - From: {var_from if var_from is not None else 'None'}
+        - To: {to if to is not None else 'None'}
+        - Window size: {windowSize if windowSize is not None else 'None'}
         """
 
     @auto_register_prompt
@@ -41,9 +41,9 @@ class InfrastructureAnalyzePrompts:
         return f"""
         Get infrastructure entities:
         - Type: {type}
-        - Metrics: {metrics}
-        - Window size: {windowSize or 'None'}
-        - To: {to or 'None'}
+        - Metrics: {metrics if metrics is not None else 'None'}
+        - Window size: {windowSize if windowSize is not None else 'None'}
+        - To: {to if to is not None else 'None'}
         """
 
     @auto_register_prompt
@@ -56,10 +56,10 @@ class InfrastructureAnalyzePrompts:
         """List available infrastructure monitoring plugins"""
         return f"""
         Get available infrastructure plugins:
-        - Query: {query or 'None'}
-        - Offline: {offline or 'False'}
-        - Window size: {windowSize or 'None'}
-        - To: {to or 'None'}
+        - Query: {query if query is not None else 'None'}
+        - Offline: {offline}
+        - Window size: {windowSize if windowSize is not None else 'None'}
+        - To: {to if to is not None else 'None'}
         """
 
     @classmethod

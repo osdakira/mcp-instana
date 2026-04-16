@@ -7,7 +7,6 @@ This module provides application alert configuration tools for Instana monitorin
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp import Context
 from mcp.types import ToolAnnotations
 
 from src.core.utils import BaseInstanaClient, register_as_tool, with_header_auth
@@ -44,7 +43,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
         valid_on: Optional[int] = None,
         created: Optional[int] = None,
         payload: Optional[Union[Dict[str, Any], str]] = None,
-        ctx: Optional[Context] = None
+        ctx=None
     ) -> Dict[str, Any]:
         """
         Execute Global Application Alert Config CRUD operations.
@@ -96,8 +95,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
         self,
         application_id: Optional[str],
         alert_ids: Optional[List[str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Find active global application alert configs."""
         if not application_id:
@@ -114,8 +113,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def _find_config_versions(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Find all versions of a global application alert config."""
         if not id:
@@ -132,8 +131,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
         self,
         id: Optional[str],
         valid_on: Optional[int],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Find a specific global application alert config."""
         return await self.find_global_application_alert_config(
@@ -147,8 +146,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def _create_config(
         self,
         payload: Optional[Union[Dict[str, Any], str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Create a new global application alert config."""
         if not payload:
@@ -165,8 +164,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
         self,
         id: Optional[str],
         payload: Optional[Union[Dict[str, Any], str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Update an existing global application alert config."""
         if not id:
@@ -185,8 +184,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def _delete_config(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Delete a global application alert config."""
         if not id:
@@ -202,8 +201,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def _enable_config(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Enable a global application alert config."""
         if not id:
@@ -219,8 +218,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def _disable_config(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Disable a global application alert config."""
         if not id:
@@ -237,8 +236,8 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
         self,
         id: Optional[str],
         created: Optional[int],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Restore a deleted global application alert config."""
         if not id:
@@ -260,7 +259,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def find_active_global_application_alert_configs(self,
                                             application_id: str,
                                             alert_ids: Optional[List[str]] = None,
-                                            ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                            ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get All Global Smart Alert Configuration.
 
@@ -342,7 +341,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     @with_header_auth(GlobalApplicationAlertConfigurationApi)
     async def find_global_application_alert_config_versions(self,
                                                      id: str,
-                                                     ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                                     ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get Global Smart Alert Config Versions . Get all versions of Global Smart Alert Configuration.
 
@@ -391,7 +390,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def find_global_application_alert_config(self,
                                             id: Optional[str] = None,
                                             valid_on: Optional[int] = None,
-                                            ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                            ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Gets a specific Global Smart Alert Configuration. This may return a deleted Configuration.
 
@@ -436,7 +435,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     @with_header_auth(GlobalApplicationAlertConfigurationApi)
     async def delete_global_application_alert_config(self,
                                               id: str,
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Deletes a Global Smart Alert Configuration.
 
@@ -477,7 +476,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     @with_header_auth(GlobalApplicationAlertConfigurationApi)
     async def enable_global_application_alert_config(self,
                                               id: str,
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Enable a Global Smart Alert Configuration.
 
@@ -522,7 +521,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     @with_header_auth(GlobalApplicationAlertConfigurationApi)
     async def disable_global_application_alert_config(self,
                                                id: str,
-                                               ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                               ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Disable a Global Smart Alert Configuration.
 
@@ -568,7 +567,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def restore_global_application_alert_config(self,
                                                id: str,
                                                created: int,
-                                               ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                               ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Restore a deleted Global Smart Alert Configuration.
 
@@ -617,7 +616,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     @with_header_auth(GlobalApplicationAlertConfigurationApi)
     async def create_global_application_alert_config(self,
                                               payload: Union[Dict[str, Any], str],
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Creates a new Global Smart Alert Configuration.
 
@@ -760,7 +759,7 @@ class ApplicationGlobalAlertMCPTools(BaseInstanaClient):
     async def update_global_application_alert_config(self,
                                               id: str,
                                               payload: Union[Dict[str, Any], str],
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Update an existing Global Smart Alert Configuration.
 

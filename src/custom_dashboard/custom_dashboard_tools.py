@@ -9,7 +9,6 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastmcp import Context
 from mcp.types import ToolAnnotations
 
 from src.core.utils import (
@@ -43,7 +42,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
         self,
         operation: str,
         params: Optional[Dict[str, Any]] = None,
-        ctx: Optional[Context] = None
+        ctx=None
     ) -> Dict[str, Any]:
         """
         Execute Custom Dashboard CRUD operations.
@@ -125,8 +124,8 @@ class CustomDashboardMCPTools(BaseInstanaClient):
                                    page_size: Optional[int] = None,
                                    page: Optional[int] = None,
                                    with_total_hits: Optional[bool] = None,
-                                   ctx: Optional[Context] = None,
-                                   api_client: Any = None) -> Dict[str, Any]:
+                                   ctx=None,
+                                   api_client=None) -> Dict[str, Any]:
         """
         Get all custom dashboards from Instana server.
         Uses api/custom-dashboard endpoint.
@@ -189,7 +188,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     @with_header_auth(CustomDashboardsApi)
     async def get_custom_dashboard(self,
                                   dashboard_id: str,
-                                  ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                  ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get a specific custom dashboard by ID from Instana server.
         Uses api/custom-dashboard/{id} endpoint.
@@ -227,7 +226,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     @with_header_auth(CustomDashboardsApi)
     async def add_custom_dashboard(self,
                                   custom_dashboard: Dict[str, Any],
-                                  ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                  ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Add a new custom dashboard to Instana server.
         Uses api/custom-dashboard POST endpoint.
@@ -288,7 +287,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     async def update_custom_dashboard(self,
                                      dashboard_id: str,
                                      custom_dashboard: Dict[str, Any],
-                                     ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                     ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Update an existing custom dashboard in Instana server.
         Uses api/custom-dashboard/{id} PUT endpoint.
@@ -351,7 +350,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     @with_header_auth(CustomDashboardsApi)
     async def delete_custom_dashboard(self,
                                      dashboard_id: str,
-                                     ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                     ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Delete a custom dashboard from Instana server.
         Uses api/custom-dashboard/{id} DELETE endpoint.
@@ -396,7 +395,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     @with_header_auth(CustomDashboardsApi)
     async def get_shareable_users(self,
                                  dashboard_id: Optional[str] = None,
-                                 ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                 ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get all users that have access to shareable custom dashboards.
         Note: This returns ALL users globally, not for a specific dashboard.
@@ -440,7 +439,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     @with_header_auth(CustomDashboardsApi)
     async def get_shareable_api_tokens(self,
                                       dashboard_id: Optional[str] = None,
-                                      ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                      ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get all API tokens that have access to shareable custom dashboards.
         Note: This returns ALL API tokens globally, not for a specific dashboard.

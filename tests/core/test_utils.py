@@ -541,6 +541,155 @@ class TestBaseInstanaClient(unittest.TestCase):
                     sys.modules.pop(k, None)
                 else:
                     sys.modules[k] = v
+    def test_with_header_auth_session_token_authentication(self):
+        """Test with_header_auth now only supports API token authentication"""
+        # The decorator now only supports API token authentication
+        # Session tokens are no longer supported
+        with patch('fastmcp.server.dependencies.get_http_headers') as mock_get_headers:
+            mock_get_headers.return_value = {
+                "instana-api-token": "api_token_123",
+                "instana-base-url": "https://session.instana.io"
+            }
+
+            # Mock the SDK imports
+            with patch('instana_client.configuration.Configuration') as mock_config, \
+                 patch('instana_client.api_client.ApiClient') as mock_api_client:
+
+                mock_config_instance = MagicMock()
+                mock_config_instance.api_key = {}
+                mock_config_instance.api_key_prefix = {}
+                mock_config.return_value = mock_config_instance
+                mock_api_client_instance = MagicMock()
+                mock_api_client.return_value = mock_api_client_instance
+
+                # Create a test API class
+                class TestApiClass:
+                    def __init__(self, api_client):
+                        self.api_client = api_client
+
+                # Create a test method
+                @with_header_auth(TestApiClass)
+                async def test_method(self, ctx=None, api_client=None):
+                    return {"success": True, "api_client": api_client}
+
+                # Call the method
+                result = asyncio.run(test_method(self.client))
+
+                # Check that the result is correct
+                self.assertIn("success", result)
+                self.assertTrue(result["success"])
+
+                # Verify API token was configured
+                self.assertEqual(mock_config_instance.api_key['ApiKeyAuth'], "api_token_123")
+                self.assertEqual(mock_config_instance.api_key_prefix['ApiKeyAuth'], 'apiToken')
+
+    def test_with_header_auth_session_with_custom_cookie_name(self):
+        """Test with_header_auth with API token (session tokens no longer supported)"""
+        # The decorator now only supports API token authentication
+        with patch('fastmcp.server.dependencies.get_http_headers') as mock_get_headers:
+            mock_get_headers.return_value = {
+                "instana-api-token": "api_token_456",
+                "instana-base-url": "https://session.instana.io"
+            }
+
+            # Mock the SDK imports
+            with patch('instana_client.configuration.Configuration') as mock_config, \
+                 patch('instana_client.api_client.ApiClient') as mock_api_client:
+
+                mock_config_instance = MagicMock()
+                mock_config_instance.api_key = {}
+                mock_config_instance.api_key_prefix = {}
+                mock_config.return_value = mock_config_instance
+                mock_api_client_instance = MagicMock()
+                mock_api_client.return_value = mock_api_client_instance
+
+                # Create a test API class
+                class TestApiClass:
+                    def __init__(self, api_client):
+                        self.api_client = api_client
+
+                # Create a test method
+                @with_header_auth(TestApiClass)
+                async def test_method(self, ctx=None, api_client=None):
+                    return {"success": True}
+
+                # Call the method
+                result = asyncio.run(test_method(self.client))
+
+                # Check that the result is correct
+                self.assertIn("success", result)
+                self.assertTrue(result["success"])
+
+                # Verify API token was configured
+                self.assertEqual(mock_config_instance.api_key['ApiKeyAuth'], "api_token_456")
+                self.assertEqual(mock_config_instance.api_key_prefix['ApiKeyAuth'], 'apiToken')
+
+    def test_with_header_auth_api_token_priority_over_session(self):
+        """Test that decorator uses API token authentication"""
+        # The decorator now only supports API token authentication
+        with patch('fastmcp.server.dependencies.get_http_headers') as mock_get_headers:
+            mock_get_headers.return_value = {
+                "instana-api-token": "api_token_789",
+                "instana-base-url": "https://test.instana.io"
+            }
+
+            # Mock the SDK imports
+            with patch('instana_client.configuration.Configuration') as mock_config, \
+                 patch('instana_client.api_client.ApiClient') as mock_api_client:
+
+                mock_config_instance = MagicMock()
+                mock_config_instance.api_key = {}
+                mock_config_instance.api_key_prefix = {}
+                mock_config.return_value = mock_config_instance
+                mock_api_client_instance = MagicMock()
+                mock_api_client.return_value = mock_api_client_instance
+
+                # Create a test API class
+                class TestApiClass:
+                    def __init__(self, api_client):
+                        self.api_client = api_client
+
+                # Create a test method
+                @with_header_auth(TestApiClass)
+                async def test_method(self, ctx=None, api_client=None):
+                    return {"success": True}
+
+                # Call the method
+                result = asyncio.run(test_method(self.client))
+
+                # Check that the result is correct
+                self.assertIn("success", result)
+
+                # Verify API token was configured
+                self.assertEqual(mock_config_instance.api_key['ApiKeyAuth'], "api_token_789")
+                self.assertEqual(mock_config_instance.api_key_prefix['ApiKeyAuth'], 'apiToken')
+
+    def test_with_header_auth_missing_csrf_token(self):
+        """Test with_header_auth with auth token but missing CSRF token"""
+        # Mock the get_http_headers function
+        with patch('fastmcp.server.dependencies.get_http_headers') as mock_get_headers:
+            mock_get_headers.return_value = {
+                "instana-auth-token": "session_token_123",
+                # Missing csrf token
+                "instana-base-url": "https://test.instana.io"
+            }
+
+            # Create a test API class
+            class TestApiClass:
+                def __init__(self, api_client):
+                    self.api_client = api_client
+
+            # Create a test method
+            @with_header_auth(TestApiClass)
+            async def test_method(self, ctx=None, api_client=None):
+                return {"success": True}
+
+            # Call the method - should return error
+            result = asyncio.run(test_method(self.client))
+
+            # Should return an error for incomplete session auth
+            self.assertIn("error", result)
+
 
     def test_make_request_with_json_data(self):
         """Test make_request with JSON data"""
@@ -762,14 +911,15 @@ class TestBaseInstanaClient(unittest.TestCase):
         self.assertEqual(headers["Accept"], "application/json")
 
     def test_get_headers_with_empty_token(self):
-        """Test get_headers with empty token"""
+        """Test get_headers with empty token - should raise AuthenticationError"""
         empty_token = ""
         client = BaseInstanaClient(read_token=empty_token, base_url=self.base_url)
+
+        # Empty token should return headers with empty Authorization
         headers = client.get_headers()
 
-        self.assertEqual(headers["Authorization"], "apiToken ")
+        self.assertEqual(headers["Authorization"], f"apiToken {empty_token}")
         self.assertEqual(headers["Content-Type"], "application/json")
-        self.assertEqual(headers["Accept"], "application/json")
 
     def test_get_headers_with_whitespace_token(self):
         """Test get_headers with whitespace in token"""
@@ -780,6 +930,40 @@ class TestBaseInstanaClient(unittest.TestCase):
         self.assertEqual(headers["Authorization"], f"apiToken {whitespace_token}")
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(headers["Accept"], "application/json")
+    def test_get_headers_with_session_tokens(self):
+        """Test get_headers no longer supports session tokens - only API token"""
+        # The simplified get_headers() method only supports API token authentication
+        # Session token authentication is handled by the with_header_auth decorator
+        headers = self.client.get_headers()
+
+        # Should return standard API token headers
+        self.assertEqual(headers["Authorization"], f"apiToken {self.read_token}")
+        self.assertEqual(headers["Content-Type"], "application/json")
+
+    def test_get_headers_with_custom_cookie_name(self):
+        """Test get_headers no longer supports custom cookie names"""
+        # The simplified get_headers() method only supports API token authentication
+        headers = self.client.get_headers()
+
+        # Should return standard API token headers
+        self.assertEqual(headers["Authorization"], f"apiToken {self.read_token}")
+
+    def test_get_headers_api_token_priority_over_session(self):
+        """Test get_headers only uses API token from constructor"""
+        # The simplified get_headers() method only uses the API token from constructor
+        headers = self.client.get_headers()
+
+        # Should return standard API token headers
+        self.assertEqual(headers["Authorization"], f"apiToken {self.read_token}")
+
+    def test_get_headers_session_only_when_no_api_token(self):
+        """Test get_headers with empty API token"""
+        client = BaseInstanaClient(read_token="", base_url=self.base_url)
+
+        # Should still return headers with empty token
+        headers = client.get_headers()
+        self.assertEqual(headers["Authorization"], "apiToken ")
+
 
 
 class TestVersionImport(unittest.TestCase):
@@ -825,7 +1009,7 @@ class TestVersionImport(unittest.TestCase):
         # Re-import to trigger the version logic
         importlib.reload(src.core.utils)
 
-        # Check that the fallback version was used
+        # Check that the fallback version was used (updated to 0.9.6)
         self.assertEqual(src.core.utils.__version__, "0.9.6")
 
     def test_version_used_in_headers(self):

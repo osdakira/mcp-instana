@@ -7,8 +7,6 @@ This module provides website configuration-specific MCP tools for Instana monito
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp import Context
-
 # Import the necessary classes from the SDK
 try:
     from instana_client.api.website_configuration_api import WebsiteConfigurationApi
@@ -137,7 +135,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
             return {"error": f"Failed to execute advanced config operation: {e!s}"}
 
     @with_header_auth(WebsiteConfigurationApi)
-    async def _get_all_websites(self, ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    async def _get_all_websites(self, ctx=None, api_client=None) -> Dict[str, Any]:
         return await self.get_websites(ctx=ctx, api_client=api_client)
 
     @with_header_auth(WebsiteConfigurationApi)
@@ -145,8 +143,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
         self,
         website_id: Optional[str],
         website_name: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Get a specific website by ID or name."""
         # If website_name is provided but not website_id, resolve it
@@ -212,8 +210,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
         self,
         name: Optional[str],
         payload: Optional[Union[Dict, str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """ Create a new website. """
 
@@ -226,8 +224,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def _delete_website(
         self,
         website_id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """ Delete a website. """
 
@@ -241,8 +239,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
         self,
         website_id: Optional[str],
         name: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Rename a website."""
         if not website_id:
@@ -253,7 +251,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
         return await self.rename_website(website_id=website_id, name=name, ctx=ctx, api_client=api_client)
 
     @with_header_auth(WebsiteConfigurationApi)
-    async def get_websites(self, ctx: Optional[Context] = None, api_client: Any = None) -> List[Dict[str, Any]]:
+    async def get_websites(self, ctx=None, api_client=None) -> List[Dict[str, Any]]:
         """
         Get all websites.
 
@@ -285,7 +283,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
             return [{"error": f"Failed to get websites: {e!s}"}]
 
     @with_header_auth(WebsiteConfigurationApi)
-    async def get_website(self, website_id: str, ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    async def get_website(self, website_id: str, ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get a specific website by ID.
 
@@ -321,8 +319,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def create_website(self,
                             name: str,
                             payload: Optional[Union[List[Dict[str, Any]], str]] = None,
-                            ctx: Optional[Context] = None,
-                            api_client: Any = None) -> Dict[str, Any]:
+                            ctx=None,
+                            api_client=None) -> Dict[str, Any]:
         """
         Create a new website configuration.
 
@@ -422,7 +420,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
             return {"error": f"Failed to create website: {e!s}"}
 
     @with_header_auth(WebsiteConfigurationApi)
-    async def delete_website(self, website_id: str, ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    async def delete_website(self, website_id: str, ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Delete a website configuration.
 
@@ -451,8 +449,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def rename_website(self,
                             website_id: str,
                             name: Optional[str] = None,
-                            ctx: Optional[Context] = None,
-                            api_client: Any = None) -> Dict[str, Any]:
+                            ctx=None,
+                            api_client=None) -> Dict[str, Any]:
         """
         Rename a website configuration.
 
@@ -492,8 +490,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     @with_header_auth(WebsiteConfigurationApi)
     async def get_website_geo_location_configuration(self,
                                                     website_id: str,
-                                                    ctx: Optional[Context] = None,
-                                                    api_client: Any = None) -> Dict[str, Any]:
+                                                    ctx=None,
+                                                    api_client=None) -> Dict[str, Any]:
         """
         Get geo-location configuration for a website.
 
@@ -529,7 +527,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def update_website_geo_location_configuration(self,
                                                         website_id: str,
                                                         payload: Union[Dict[str, Any], str],
-                                                        ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                                        ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Update geo-location configuration for a website.
 
@@ -641,7 +639,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
             return {"error": f"Failed to update website geo-location configuration: {e!s}"}
 
     @with_header_auth(WebsiteConfigurationApi)
-    async def get_website_ip_masking_configuration(self, website_id: str, ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+    async def get_website_ip_masking_configuration(self, website_id: str, ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get IP masking configuration for a website.
 
@@ -677,7 +675,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def update_website_ip_masking_configuration(self,
                                                         website_id: str,
                                                         payload: Optional[Dict[str, Any]] = None,
-                                                        ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                                        ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Update IP masking configuration for a website.
 
@@ -786,7 +784,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
             return {"error": f"Failed to update website ip-masking configuration: {e!s}"}
 
     @with_header_auth(WebsiteConfigurationApi)
-    async def get_website_geo_mapping_rules(self, website_id: str, ctx: Optional[Context] = None, api_client: Any = None) -> List[Dict[str, Any]]:
+    async def get_website_geo_mapping_rules(self, website_id: str, ctx=None, api_client=None) -> List[Dict[str, Any]]:
         """
        Get custom geo mapping rules for website
 
@@ -852,7 +850,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def set_website_geo_mapping_rules(self,
                                             website_id: str,
                                             body: Optional[str] = None,
-                                            ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                            ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Set custom geo mapping rules for website
 
@@ -899,7 +897,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
                                         file_format: Optional[str] = None,
                                         source_map: Optional[str] = None,
                                         url: Optional[str] = None,
-                                        ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                        ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Upload source map file for a website.
 
@@ -953,7 +951,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def clear_source_map_upload_configuration(self,
                                                     website_id: str,
                                                     source_map_config_id: str,
-                                                    ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                                    ctx=None, api_client=None) -> Dict[str, Any]:
         """
        Clear source map upload configuration for a website.
 
@@ -998,8 +996,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
         self,
         website_id: str,
         source_map_config_id: str,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Get a specific source map upload configuration for a website.
@@ -1063,8 +1061,8 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     async def get_website_source_map_upload_configurations(
         self,
         website_id: str,
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """
         Get all source map upload configurations for a website.

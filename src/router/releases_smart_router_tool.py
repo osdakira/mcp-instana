@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastmcp import Context
 from mcp.types import ToolAnnotations
 
-from src.core.timestamp_utils import convert_to_timestamp
+from src.core.timestamp_utils import convert_datetime_param, convert_datetime_params
 from src.core.utils import BaseInstanaClient, register_as_tool
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class ReleasesSmartRouterMCPTool(BaseInstanaClient):
         self,
         operation: str,
         params: Optional[Dict[str, Any]] = None,
-        ctx: Optional[Context] = None
+        ctx: Optional[Context] = None,
     ) -> Dict[str, Any]:
         """
         Unified releases manager for tracking deployments and analyzing release impact.
@@ -144,55 +144,22 @@ class ReleasesSmartRouterMCPTool(BaseInstanaClient):
                 page_number = params.get("page_number")
                 page_size = params.get("page_size")
 
-                # Handle datetime string conversion for from_time
-                if from_time is not None and isinstance(from_time, str):
-                    logger.debug(f"[manage_releases] Converting from_time datetime string: {from_time}")
-                    # Check if timezone is provided in format "datetime|timezone"
-                    if "|" not in from_time:
-                        return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want to filter releases from '{from_time}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for the start time '{from_time}'?"
-                        }
+                # Convert datetime strings to timestamps for from_time and to_time
+                conversion_result = convert_datetime_params(
+                    {"from_time": from_time, "to_time": to_time},
+                    ["from_time", "to_time"],
+                    default_timezone="UTC"
+                )
 
-                    # Extract timezone if provided
-                    datetime_str, timezone = from_time.split("|", 1)
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "operation": operation
+                    }
 
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert from_time datetime: {conversion_result['error']}",
-                            "operation": operation
-                        }
-
-                    from_time = conversion_result["timestamp"]
-                    logger.info(f"[manage_releases] Converted from_time to timestamp: {from_time}")
-
-                # Handle datetime string conversion for to_time
-                if to_time is not None and isinstance(to_time, str):
-                    logger.debug(f"[manage_releases] Converting to_time datetime string: {to_time}")
-                    # Check if timezone is provided
-                    if "|" not in to_time:
-                        return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want to filter releases until '{to_time}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for the end time '{to_time}'?"
-                        }
-
-                    # Extract timezone if provided
-                    datetime_str, timezone = to_time.split("|", 1)
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
-
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert to_time datetime: {conversion_result['error']}",
-                            "operation": operation
-                        }
-
-                    to_time = conversion_result["timestamp"]
-                    logger.info(f"[manage_releases] Converted to_time to timestamp: {to_time}")
+                # Update the converted values
+                from_time = conversion_result["params"]["from_time"]
+                to_time = conversion_result["params"]["to_time"]
 
                 result = await self.releases_client.get_all_releases(
                     from_time=from_time,
@@ -235,30 +202,21 @@ class ReleasesSmartRouterMCPTool(BaseInstanaClient):
                         "error": "Missing required parameter: start"
                     }
 
-                # Handle datetime string conversion for start time
-                if isinstance(start, str):
-                    logger.debug(f"[manage_releases] Converting start datetime string: {start}")
-                    # Check if timezone is provided
-                    if "|" not in start:
-                        return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want to create a release starting at '{start}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for the start time '{start}'?"
-                        }
+                # Convert datetime string to timestamp for start time
+                conversion_result = convert_datetime_param(
+                    start,
+                    "start",
+                    default_timezone="UTC"
+                )
 
-                    # Extract timezone if provided
-                    datetime_str, timezone = start.split("|", 1)
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "operation": operation
+                    }
 
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert start datetime: {conversion_result['error']}",
-                            "operation": operation
-                        }
-
-                    start = conversion_result["timestamp"]
-                    logger.info(f"[manage_releases] Converted start to timestamp: {start}")
+                # Update the converted value
+                start = conversion_result["value"]
 
                 result = await self.releases_client.create_release(
                     name=name,
@@ -293,30 +251,21 @@ class ReleasesSmartRouterMCPTool(BaseInstanaClient):
                         "error": "Missing required parameter: start"
                     }
 
-                # Handle datetime string conversion for start time
-                if isinstance(start, str):
-                    logger.debug(f"[manage_releases] Converting start datetime string: {start}")
-                    # Check if timezone is provided
-                    if "|" not in start:
-                        return {
-                            "elicitation_needed": True,
-                            "message": f"I see you want to update the release start time to '{start}', but I need to know which timezone.\n\nPlease specify the timezone:\n- IST (India Standard Time)\n- America/New_York (Eastern Time)\n- UTC (Coordinated Universal Time)\n- Europe/London (GMT/BST)\n- Asia/Tokyo (Japan Standard Time)\n\nOr any other IANA timezone name.",
-                            "missing_parameters": ["timezone"],
-                            "user_prompt": f"What timezone should be used for the start time '{start}'?"
-                        }
+                # Convert datetime string to timestamp for start time
+                conversion_result = convert_datetime_param(
+                    start,
+                    "start",
+                    default_timezone="UTC"
+                )
 
-                    # Extract timezone if provided
-                    datetime_str, timezone = start.split("|", 1)
-                    conversion_result = convert_to_timestamp(datetime_str.strip(), timezone.strip(), "milliseconds")
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "operation": operation
+                    }
 
-                    if "error" in conversion_result:
-                        return {
-                            "error": f"Failed to convert start datetime: {conversion_result['error']}",
-                            "operation": operation
-                        }
-
-                    start = conversion_result["timestamp"]
-                    logger.info(f"[manage_releases] Converted start to timestamp: {start}")
+                # Update the converted value
+                start = conversion_result["value"]
 
                 result = await self.releases_client.update_release(
                     release_id=release_id,

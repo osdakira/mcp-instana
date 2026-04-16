@@ -7,7 +7,6 @@ This module provides application alert configuration tools for Instana monitorin
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp import Context
 from mcp.types import ToolAnnotations
 
 from src.core.utils import BaseInstanaClient, register_as_tool, with_header_auth
@@ -44,7 +43,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
         valid_on: Optional[int] = None,
         created: Optional[int] = None,
         payload: Optional[Union[Dict[str, Any], str]] = None,
-        ctx: Optional[Context] = None
+        ctx=None
     ) -> Dict[str, Any]:
         """
         Execute Application Alert Config CRUD operations.
@@ -98,8 +97,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
         self,
         application_id: Optional[str],
         alert_ids: Optional[List[str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Find active application alert configs."""
         if not application_id:
@@ -116,8 +115,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def _find_config_versions(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Find all versions of an application alert config."""
         if not id:
@@ -134,8 +133,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
         self,
         id: Optional[str],
         valid_on: Optional[int],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Find a specific application alert config."""
         return await self.find_application_alert_config(
@@ -149,8 +148,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def _create_config(
         self,
         payload: Optional[Union[Dict[str, Any], str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Create a new application alert config."""
         if not payload:
@@ -167,8 +166,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
         self,
         id: Optional[str],
         payload: Optional[Union[Dict[str, Any], str]],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Update an existing application alert config."""
         if not id:
@@ -187,8 +186,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def _delete_config(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Delete an application alert config."""
         if not id:
@@ -204,8 +203,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def _enable_config(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Enable an application alert config."""
         if not id:
@@ -221,8 +220,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def _disable_config(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Disable an application alert config."""
         if not id:
@@ -239,8 +238,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
         self,
         id: Optional[str],
         created: Optional[int],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Restore a deleted application alert config."""
         if not id:
@@ -259,8 +258,8 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def _update_baseline(
         self,
         id: Optional[str],
-        ctx: Optional[Context] = None,
-        api_client: Any = None
+        ctx=None,
+        api_client=None
     ) -> Dict[str, Any]:
         """Update baseline for an application alert config."""
         if not id:
@@ -279,7 +278,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def find_active_application_alert_configs(self,
                                             application_id: str,
                                             alert_ids: Optional[List[str]] = None,
-                                            ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                            ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get All Smart Alert Configuration.
 
@@ -360,7 +359,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     @with_header_auth(ApplicationAlertConfigurationApi)
     async def find_application_alert_config_versions(self,
                                                      id: str,
-                                                     ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                                     ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get Smart Alert Config Versions. Get all versions of Smart Alert Configuration.
 
@@ -408,7 +407,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def find_application_alert_config(self,
                                             id: Optional[str] = None,
                                             valid_on: Optional[int] = None,
-                                            ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                            ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Gets a specific Smart Alert Configuration. This may return a deleted Configuration.
 
@@ -452,7 +451,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     @with_header_auth(ApplicationAlertConfigurationApi)
     async def delete_application_alert_config(self,
                                               id: str,
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Deletes a Smart Alert Configuration.
 
@@ -492,7 +491,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     @with_header_auth(ApplicationAlertConfigurationApi)
     async def enable_application_alert_config(self,
                                               id: str,
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Enable a Smart Alert Configuration.
 
@@ -536,7 +535,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     @with_header_auth(ApplicationAlertConfigurationApi)
     async def disable_application_alert_config(self,
                                                id: str,
-                                               ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                               ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Disable a Smart Alert Configuration.
 
@@ -581,7 +580,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def restore_application_alert_config(self,
                                                id: str,
                                                created: int,
-                                               ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                               ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Restore a deleted Smart Alert Configuration.
 
@@ -629,7 +628,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     @with_header_auth(ApplicationAlertConfigurationApi)
     async def update_application_alert_config_baseline(self,
                                                        id: str,
-                                                       ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                                       ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Recalculate the historic baseline for a Smart Alert Configuration.
 
@@ -673,7 +672,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     @with_header_auth(ApplicationAlertConfigurationApi)
     async def create_application_alert_config(self,
                                               payload: Union[Dict[str, Any], str],
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Creates a new Smart Alert Configuration.
 
@@ -807,7 +806,7 @@ class ApplicationAlertMCPTools(BaseInstanaClient):
     async def update_application_alert_config(self,
                                               id: str,
                                               payload: Union[Dict[str, Any], str],
-                                              ctx: Optional[Context] = None, api_client: Any = None) -> Dict[str, Any]:
+                                              ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Update an existing Smart Alert Configuration.
 

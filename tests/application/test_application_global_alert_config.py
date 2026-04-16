@@ -541,5 +541,487 @@ class TestApplicationGlobalAlertMCPTools(unittest.TestCase):
         self.assertIn("Failed to update global application alert config", result["error"])
 
 
+    # Tests for execute_alert_config_operation dispatcher
+    def test_execute_alert_config_operation_find_active(self):
+        """Test execute_alert_config_operation with find_active operation"""
+        # Set up mock response
+        import json
+        mock_data = [{"id": "alert1", "name": "Test Alert"}]
+        mock_response = MagicMock()
+        mock_response.data = json.dumps(mock_data).encode('utf-8')
+        self.alert_config_api.find_active_global_application_alert_configs_without_preload_content = MagicMock()
+        self.alert_config_api.find_active_global_application_alert_configs_without_preload_content.return_value = mock_response
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find_active",
+            application_id="app1"
+        ))
+
+        # Check result
+        self.assertIn("configs", result)
+
+    def test_execute_alert_config_operation_find_versions(self):
+        """Test execute_alert_config_operation with find_versions operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1", "version": 1}
+        self.alert_config_api.find_global_application_alert_config_versions.return_value = [mock_obj]
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find_versions",
+            id="alert1"
+        ))
+
+        # Check result
+        self.assertIn("versions", result)
+
+    def test_execute_alert_config_operation_find(self):
+        """Test execute_alert_config_operation with find operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.find_global_application_alert_config.return_value = mock_obj
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find",
+            id="alert1"
+        ))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_execute_alert_config_operation_create(self):
+        """Test execute_alert_config_operation with create operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.create_global_application_alert_config.return_value = mock_obj
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="create",
+            payload={"name": "Test"}
+        ))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_execute_alert_config_operation_update(self):
+        """Test execute_alert_config_operation with update operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.update_global_application_alert_config.return_value = mock_obj
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="update",
+            id="alert1",
+            payload={"name": "Updated"}
+        ))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_execute_alert_config_operation_delete(self):
+        """Test execute_alert_config_operation with delete operation"""
+        # Set up mock response
+        self.alert_config_api.delete_global_application_alert_config.return_value = None
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="delete",
+            id="alert1"
+        ))
+
+        # Check result
+        self.assertIn("success", result)
+
+    def test_execute_alert_config_operation_enable(self):
+        """Test execute_alert_config_operation with enable operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1", "enabled": True}
+        self.alert_config_api.enable_global_application_alert_config.return_value = mock_obj
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="enable",
+            id="alert1"
+        ))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_execute_alert_config_operation_disable(self):
+        """Test execute_alert_config_operation with disable operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1", "enabled": False}
+        self.alert_config_api.disable_global_application_alert_config.return_value = mock_obj
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="disable",
+            id="alert1"
+        ))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_execute_alert_config_operation_restore(self):
+        """Test execute_alert_config_operation with restore operation"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1", "restored": True}
+        self.alert_config_api.restore_global_application_alert_config.return_value = mock_obj
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="restore",
+            id="alert1",
+            created=123456789
+        ))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_execute_alert_config_operation_unsupported(self):
+        """Test execute_alert_config_operation with unsupported operation"""
+        # Call the dispatcher with unsupported operation
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="unsupported_op"
+        ))
+
+        # Check result contains error
+        self.assertIn("error", result)
+        self.assertIn("not supported", result["error"])
+
+    def test_execute_alert_config_operation_exception(self):
+        """Test execute_alert_config_operation exception handling"""
+        # Set up mock to raise exception
+        self.alert_config_api.find_global_application_alert_config.side_effect = Exception("Test error")
+
+        # Call the dispatcher
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find",
+            id="alert1"
+        ))
+
+        # Check result contains error (the actual error message from the method)
+        self.assertIn("error", result)
+        self.assertIn("Failed to get global application alert configs", result["error"])
+
+    # Tests for helper method validation errors
+    def test_find_active_configs_missing_application_id(self):
+        """Test _find_active_configs with missing application_id"""
+        result = asyncio.run(self.client._find_active_configs(
+            application_id=None,
+            alert_ids=None
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("application_id is required", result["error"])
+
+    def test_find_config_versions_missing_id(self):
+        """Test _find_config_versions with missing id"""
+        result = asyncio.run(self.client._find_config_versions(id=None))
+
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    def test_create_config_missing_payload(self):
+        """Test _create_config with missing payload"""
+        result = asyncio.run(self.client._create_config(payload=None))
+
+        self.assertIn("error", result)
+        self.assertIn("payload is required", result["error"])
+
+    def test_update_config_missing_id(self):
+        """Test _update_config with missing id"""
+        result = asyncio.run(self.client._update_config(
+            id=None,
+            payload={"name": "Test"}
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    def test_update_config_missing_payload(self):
+        """Test _update_config with missing payload"""
+        result = asyncio.run(self.client._update_config(
+            id="alert1",
+            payload=None
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("payload is required", result["error"])
+
+    def test_delete_config_missing_id(self):
+        """Test _delete_config with missing id"""
+        result = asyncio.run(self.client._delete_config(id=None))
+
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    def test_enable_config_missing_id(self):
+        """Test _enable_config with missing id"""
+        result = asyncio.run(self.client._enable_config(id=None))
+
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    def test_disable_config_missing_id(self):
+        """Test _disable_config with missing id"""
+        result = asyncio.run(self.client._disable_config(id=None))
+
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    def test_restore_config_missing_id(self):
+        """Test _restore_config with missing id"""
+        result = asyncio.run(self.client._restore_config(
+            id=None,
+            created=123456789
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("id is required", result["error"])
+
+    def test_restore_config_missing_created(self):
+        """Test _restore_config with missing created"""
+        result = asyncio.run(self.client._restore_config(
+            id="alert1",
+            created=None
+        ))
+
+        self.assertIn("error", result)
+        self.assertIn("created timestamp is required", result["error"])
+
+    # Tests for JSON decode errors
+    def test_find_active_configs_json_decode_error(self):
+        """Test find_active_global_application_alert_configs with JSON decode error"""
+        # Set up mock response with invalid JSON
+        mock_response = MagicMock()
+        mock_response.data = b"invalid json {"
+        self.alert_config_api.find_active_global_application_alert_configs_without_preload_content = MagicMock()
+        self.alert_config_api.find_active_global_application_alert_configs_without_preload_content.return_value = mock_response
+
+        # Call the method
+        result = asyncio.run(self.client.find_active_global_application_alert_configs(application_id="app1"))
+
+        # Check error
+        self.assertIn("error", result)
+        self.assertIn("Failed to parse response JSON", result["error"])
+
+    # Tests for response handling edge cases
+    def test_find_active_configs_single_dict_result(self):
+        """Test find_active_global_application_alert_configs with single dict result"""
+        # Set up mock response with single dict (not list)
+        import json
+        mock_data = {"id": "alert1", "name": "Test Alert"}
+        mock_response = MagicMock()
+        mock_response.data = json.dumps(mock_data).encode('utf-8')
+        self.alert_config_api.find_active_global_application_alert_configs_without_preload_content = MagicMock()
+        self.alert_config_api.find_active_global_application_alert_configs_without_preload_content.return_value = mock_response
+
+        # Call the method
+        result = asyncio.run(self.client.find_active_global_application_alert_configs(application_id="app1"))
+
+        # Check result wraps single dict in list
+        self.assertIn("configs", result)
+        self.assertEqual(len(result["configs"]), 1)
+
+    def test_find_config_versions_dict_result(self):
+        """Test find_global_application_alert_config_versions with dict result"""
+        # Set up mock response as dict (not list)
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1", "version": 1}
+        self.alert_config_api.find_global_application_alert_config_versions.return_value = mock_obj
+
+        # Call the method
+        result = asyncio.run(self.client.find_global_application_alert_config_versions(id="alert1"))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_find_config_versions_plain_dict_result(self):
+        """Test find_global_application_alert_config_versions with plain dict result"""
+        # Set up mock response as plain dict
+        self.alert_config_api.find_global_application_alert_config_versions.return_value = {"data": "test"}
+
+        # Call the method
+        result = asyncio.run(self.client.find_global_application_alert_config_versions(id="alert1"))
+
+        # Check result - plain dict is returned as-is when it's already a dict
+        self.assertEqual(result, {"data": "test"})
+
+    def test_find_config_list_result(self):
+        """Test find_global_application_alert_config with list result"""
+        # Set up mock response as list
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.find_global_application_alert_config.return_value = [mock_obj]
+
+        # Call the method
+        result = asyncio.run(self.client.find_global_application_alert_config(id="alert1"))
+
+        # Check result wraps list
+        self.assertIn("configs", result)
+
+    def test_find_config_plain_dict_result(self):
+        """Test find_global_application_alert_config with plain dict result"""
+        # Set up mock response as plain dict
+        self.alert_config_api.find_global_application_alert_config.return_value = {"data": "test"}
+
+        # Call the method
+        result = asyncio.run(self.client.find_global_application_alert_config(id="alert1"))
+
+        # Check result - plain dict is returned as-is when it's already a dict
+        self.assertEqual(result, {"data": "test"})
+
+    def test_enable_config_no_result(self):
+        """Test enable_global_application_alert_config with no result"""
+        # Set up mock to return None
+        self.alert_config_api.enable_global_application_alert_config.return_value = None
+
+        # Call the method
+        result = asyncio.run(self.client.enable_global_application_alert_config(id="alert1"))
+
+        # Check default success message
+        self.assertIn("success", result)
+        self.assertTrue(result["success"])
+
+    def test_disable_config_no_result(self):
+        """Test disable_global_application_alert_config with no result"""
+        # Set up mock to return None
+        self.alert_config_api.disable_global_application_alert_config.return_value = None
+
+        # Call the method
+        result = asyncio.run(self.client.disable_global_application_alert_config(id="alert1"))
+
+        # Check default success message
+        self.assertIn("success", result)
+        self.assertTrue(result["success"])
+
+    def test_restore_config_no_result(self):
+        """Test restore_global_application_alert_config with no result"""
+        # Set up mock to return None
+        self.alert_config_api.restore_global_application_alert_config.return_value = None
+
+        # Call the method
+        result = asyncio.run(self.client.restore_global_application_alert_config(id="alert1", created=123456789))
+
+        # Check default success message
+        self.assertIn("success", result)
+        self.assertTrue(result["success"])
+
+    # Tests for string payload parsing in create
+    def test_create_config_string_payload_json(self):
+        """Test create_global_application_alert_config with JSON string payload"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.create_global_application_alert_config.return_value = mock_obj
+
+        # Call with JSON string
+        import json
+        payload_str = json.dumps({"name": "Test Alert"})
+        result = asyncio.run(self.client.create_global_application_alert_config(payload=payload_str))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_create_config_string_payload_single_quotes(self):
+        """Test create_global_application_alert_config with single-quoted string payload"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.create_global_application_alert_config.return_value = mock_obj
+
+        # Call with single-quoted string
+        payload_str = "{'name': 'Test Alert'}"
+        result = asyncio.run(self.client.create_global_application_alert_config(payload=payload_str))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_create_config_string_payload_invalid(self):
+        """Test create_global_application_alert_config with invalid string payload"""
+        # Call with invalid string
+        payload_str = "invalid {{{ payload"
+        result = asyncio.run(self.client.create_global_application_alert_config(payload=payload_str))
+
+        # Check error
+        self.assertIn("error", result)
+        self.assertIn("Invalid payload format", result["error"])
+
+    def test_create_config_plain_dict_result(self):
+        """Test create_global_application_alert_config with plain dict result"""
+        # Set up mock to return plain dict
+        self.alert_config_api.create_global_application_alert_config.return_value = {"id": "alert1"}
+
+        # Call the method
+        result = asyncio.run(self.client.create_global_application_alert_config(payload={"name": "Test"}))
+
+        # Check result
+        self.assertEqual(result, {"id": "alert1"})
+
+    # Tests for string payload parsing in update
+    def test_update_config_string_payload_json(self):
+        """Test update_global_application_alert_config with JSON string payload"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.update_global_application_alert_config.return_value = mock_obj
+
+        # Call with JSON string
+        import json
+        payload_str = json.dumps({"name": "Updated Alert"})
+        result = asyncio.run(self.client.update_global_application_alert_config(id="alert1", payload=payload_str))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_update_config_string_payload_single_quotes(self):
+        """Test update_global_application_alert_config with single-quoted string payload"""
+        # Set up mock response
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = {"id": "alert1"}
+        self.alert_config_api.update_global_application_alert_config.return_value = mock_obj
+
+        # Call with single-quoted string
+        payload_str = "{'name': 'Updated Alert'}"
+        result = asyncio.run(self.client.update_global_application_alert_config(id="alert1", payload=payload_str))
+
+        # Check result
+        self.assertIsInstance(result, dict)
+
+    def test_update_config_string_payload_invalid(self):
+        """Test update_global_application_alert_config with invalid string payload"""
+        # Call with invalid string
+        payload_str = "invalid {{{ payload"
+        result = asyncio.run(self.client.update_global_application_alert_config(id="alert1", payload=payload_str))
+
+        # Check error
+        self.assertIn("error", result)
+        self.assertIn("Invalid payload format", result["error"])
+
+    def test_update_config_no_result(self):
+        """Test update_global_application_alert_config with no result"""
+        # Set up mock to return None
+        self.alert_config_api.update_global_application_alert_config.return_value = None
+
+        # Call the method
+        result = asyncio.run(self.client.update_global_application_alert_config(id="alert1", payload={"name": "Test"}))
+
+        # Check default success message
+        self.assertIn("success", result)
+        self.assertTrue(result["success"])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -57,6 +57,159 @@ def register_as_tool(title=None, annotations=None):
 
     return decorator
 
+def _validate_http_headers(instana_token, instana_base_url):
+    """Validate HTTP mode headers."""
+    if not instana_token or not instana_base_url:
+        missing = []
+        if not instana_token:
+            missing.append("instana-api-token")
+        if not instana_base_url:
+            missing.append("instana-base-url")
+        error_msg = f"HTTP mode detected but missing required headers: {', '.join(missing)}"
+        print(f" {error_msg}", file=sys.stderr)
+        return {"error": error_msg}
+
+    if not instana_base_url.startswith("http://") and not instana_base_url.startswith("https://"):
+        error_msg = "Instana base URL must start with http:// or https://"
+        print(f" {error_msg}", file=sys.stderr)
+        return {"error": error_msg}
+
+    return None
+
+
+def _create_api_client_from_config(base_url, api_token):
+    """Create API client from configuration."""
+    from instana_client.api_client import ApiClient
+    from instana_client.configuration import Configuration
+
+    configuration = Configuration()
+    configuration.host = base_url
+    configuration.api_key['ApiKeyAuth'] = api_token
+    configuration.api_key_prefix['ApiKeyAuth'] = 'apiToken'
+
+    api_client_instance = ApiClient(configuration=configuration)
+    user_agent_value = f"MCP-server/{__version__}"
+    api_client_instance.set_default_header("User-Agent", header_value=user_agent_value)
+
+    return api_client_instance
+
+
+def _try_http_mode_auth(api_class):
+    """Attempt HTTP mode authentication."""
+    try:
+        from fastmcp.server.dependencies import get_http_headers
+        headers = get_http_headers()
+
+        instana_token = headers.get("instana-api-token")
+        instana_base_url = headers.get("instana-base-url")
+
+        # Check if we're in HTTP mode
+        if not (instana_token or instana_base_url):
+            return None
+
+        # Validate headers
+        validation_error = _validate_http_headers(instana_token, instana_base_url)
+        if validation_error:
+            return validation_error
+
+        # Create API client
+        api_client_instance = _create_api_client_from_config(instana_base_url, instana_token)
+        return api_class(api_client=api_client_instance)
+
+    except (ImportError, AttributeError) as e:
+        print(f"Header detection failed, using STDIO mode: {e}", file=sys.stderr)
+        return None
+
+
+def _validate_stdio_credentials(self):
+    """Validate STDIO mode credentials."""
+    if not self.read_token or not self.base_url:
+        error_msg = "Authentication failed: Missing credentials "
+        if not self.read_token:
+            error_msg += " - INSTANA_API_TOKEN is missing"
+        if not self.base_url:
+            error_msg += " - INSTANA_BASE_URL is missing"
+        print(f" {error_msg}", file=sys.stderr)
+        return {"error": error_msg}
+    return None
+
+
+def _find_existing_api_client(self, api_class):
+    """Find existing API client in self attributes."""
+    api_class_name = getattr(api_class, '__name__', str(api_class))
+    for attr_name in dir(self):
+        if attr_name.endswith('_api'):
+            attr = getattr(self, attr_name)
+            if hasattr(attr, '__class__') and attr.__class__.__name__ == api_class_name:
+                print(f"🔐 Found existing API client: {attr_name}", file=sys.stderr)
+                return getattr(self, attr_name)
+    return None
+
+
+def _create_stdio_api_client(self, api_class):
+    """Create new API client using STDIO credentials."""
+    print(" Creating new API client with constructor credentials", file=sys.stderr)
+    api_client_instance = _create_api_client_from_config(self.base_url, self.read_token)
+    print(f"✅ Set User-Agent header: MCP-server/{__version__}", file=sys.stderr)
+    return api_class(api_client=api_client_instance)
+
+
+def _auth_check_mock(allow_mock, kwargs):
+    """Check if mock client should be used."""
+    if allow_mock and kwargs.get('api_client') is not None:
+        print(" Using mock client for testing", file=sys.stderr)
+        return True
+    return False
+
+
+def _auth_try_http(api_class):
+    """Try HTTP mode authentication and return (api_instance, error)."""
+    api_instance = _try_http_mode_auth(api_class)
+    if isinstance(api_instance, dict) and "error" in api_instance:
+        return None, api_instance
+    return api_instance, None
+
+
+def _auth_try_stdio(self, api_class):
+    """Try STDIO mode authentication and return (api_instance, error)."""
+    print(" Using constructor-based authentication (STDIO mode)", file=sys.stderr)
+    print(f" self.base_url: {self.base_url}", file=sys.stderr)
+
+    validation_error = _validate_stdio_credentials(self)
+    if validation_error:
+        return None, validation_error
+
+    api_instance = _find_existing_api_client(self, api_class)
+    if not api_instance:
+        api_instance = _create_stdio_api_client(self, api_class)
+
+    return api_instance, None
+
+
+async def _auth_wrapper_logic(func, self, args, kwargs, api_class, allow_mock):
+    """Execute authentication logic for the wrapper function."""
+    # Check for mock client
+    if _auth_check_mock(allow_mock, kwargs):
+        return await func(self, *args, **kwargs)
+
+    # Try HTTP mode first
+    api_instance, error = _auth_try_http(api_class)
+    if error:
+        return error
+
+    if api_instance:
+        kwargs['api_client'] = api_instance
+        return await func(self, *args, **kwargs)
+
+    # Fall back to STDIO mode
+    api_instance, error = _auth_try_stdio(self, api_class)
+    if error:
+        return error
+
+    kwargs['api_client'] = api_instance
+    return await func(self, *args, **kwargs)
+
+
 def with_header_auth(api_class, allow_mock=True):
     """
     Universal decorator for Instana MCP tools that provides flexible authentication.
@@ -89,146 +242,29 @@ def with_header_auth(api_class, allow_mock=True):
     to exclude them from the published schema. These are internal parameters injected by the decorator.
     """
     def decorator(func: Callable) -> Callable:
-        # Get the original function signature
         import inspect
         sig = inspect.signature(func)
 
-        # Create a new signature excluding api_client parameter
-        # Keep parameters as Parameter objects, not just names
         new_params = [
             param for name, param in sig.parameters.items()
-            if name not in ('api_client',)  # Don't exclude 'self' here, it's needed
+            if name not in ('api_client',)
         ]
 
-        # Create wrapper with modified signature for schema generation
         @wraps(func)
         async def wrapper(self, *args, **kwargs):
             try:
-                # Check if a mock client is being passed (for testing)
-                if allow_mock and 'api_client' in kwargs and kwargs['api_client'] is not None:
-                    print(" Using mock client for testing", file=sys.stderr)
-                    # Call the original function with the mock client
-                    return await func(self, *args, **kwargs)
-
-                # Try to get headers first to determine mode
-                try:
-                    from fastmcp.server.dependencies import get_http_headers
-                    headers = get_http_headers()
-
-                    instana_token = headers.get("instana-api-token")
-                    instana_base_url = headers.get("instana-base-url")
-
-                    # Check if we're in HTTP mode (headers are present)
-                    if instana_token or instana_base_url:
-                        # HTTP mode detected - both headers must be present
-                        if not instana_token or not instana_base_url:
-                            missing = []
-                            if not instana_token:
-                                missing.append("instana-api-token")
-                            if not instana_base_url:
-                                missing.append("instana-base-url")
-                            error_msg = f"HTTP mode detected but missing required headers: {', '.join(missing)}"
-                            print(f" {error_msg}", file=sys.stderr)
-                            return {"error": error_msg}
-
-                        # Validate URL format
-                        if not instana_base_url.startswith("http://") and not instana_base_url.startswith("https://"):
-                            error_msg = "Instana base URL must start with http:// or https://"
-                            print(f" {error_msg}", file=sys.stderr)
-                            return {"error": error_msg}
-                        # Import SDK components
-                        from instana_client.api_client import ApiClient
-                        from instana_client.configuration import Configuration
-
-                        # Create API client from headers
-                        configuration = Configuration()
-                        configuration.host = instana_base_url
-                        configuration.api_key['ApiKeyAuth'] = instana_token
-                        configuration.api_key_prefix['ApiKeyAuth'] = 'apiToken'
-
-                        api_client_instance = ApiClient(configuration=configuration)
-                        user_agent_value = f"MCP-server/{__version__}"
-                        api_client_instance.set_default_header("User-Agent", header_value=user_agent_value)
-                        api_instance = api_class(api_client=api_client_instance)
-
-                        # Add the API instance to kwargs so the decorated function can use it
-                        kwargs['api_client'] = api_instance
-
-                        # Call the original function
-                        return await func(self, *args, **kwargs)
-
-                except (ImportError, AttributeError) as e:
-                    print(f"Header detection failed, using STDIO mode: {e}", file=sys.stderr)
-
-                # STDIO mode - use constructor-based authentication
-                print(" Using constructor-based authentication (STDIO mode)", file=sys.stderr)
-                print(f" self.base_url: {self.base_url}", file=sys.stderr)
-
-                # Validate constructor credentials before proceeding
-                if not self.read_token or not self.base_url:
-                    error_msg = "Authentication failed: Missing credentials "
-                    if not self.read_token:
-                        error_msg += " - INSTANA_API_TOKEN is missing"
-                    if not self.base_url:
-                        error_msg += " - INSTANA_BASE_URL is missing"
-                    print(f" {error_msg}", file=sys.stderr)
-                    return {"error": error_msg}
-
-                # Check if the class has the expected API attribute
-                api_attr_name = None
-                # Safely get the API class name
-                api_class_name = getattr(api_class, '__name__', str(api_class))
-                for attr_name in dir(self):
-                    if attr_name.endswith('_api'):
-                        attr = getattr(self, attr_name)
-                        if hasattr(attr, '__class__') and attr.__class__.__name__ == api_class_name:
-                            api_attr_name = attr_name
-                            print(f"🔐 Found existing API client: {attr_name}", file=sys.stderr)
-                            break
-
-                if api_attr_name:
-                    # Use the existing API client from constructor
-                    api_instance = getattr(self, api_attr_name)
-                    kwargs['api_client'] = api_instance
-                    return await func(self, *args, **kwargs)
-                else:
-                    # Create a new API client using constructor credentials
-                    print(" Creating new API client with constructor credentials", file=sys.stderr)
-                    from instana_client.api_client import ApiClient
-                    from instana_client.configuration import Configuration
-
-                    configuration = Configuration()
-                    configuration.host = self.base_url
-                    configuration.api_key['ApiKeyAuth'] = self.read_token
-                    configuration.api_key_prefix['ApiKeyAuth'] = 'apiToken'
-                    api_client_instance = ApiClient(configuration=configuration)
-                    # Set User-Agent header instead of User-Agent
-                    user_agent_value = f"MCP-server/{__version__}"
-                    # Add custom tracking headers
-                    api_client_instance.set_default_header("User-Agent", user_agent_value)
-                    print(f"✅ Set User-Agent header: {user_agent_value}", file=sys.stderr)
-                    api_instance = api_class(api_client=api_client_instance)
-
-                    kwargs['api_client'] = api_instance
-                    return await func(self, *args, **kwargs)
-
+                return await _auth_wrapper_logic(func, self, args, kwargs, api_class, allow_mock)
             except Exception as e:
                 print(f"Error in header auth decorator: {e}", file=sys.stderr)
                 import traceback
                 traceback.print_exc(file=sys.stderr)
-                # Handle the specific case where e might be a string
-                if isinstance(e, str):
-                    error_msg = f"Authentication error: {e}"
-                else:
-                    error_msg = f"Authentication error: {e!s}"
+                error_msg = f"Authentication error: {e}" if isinstance(e, str) else f"Authentication error: {e!s}"
                 return {"error": error_msg}
 
-        # Apply the modified signature to the wrapper (excluding api_client from schema)
         wrapper.__signature__ = sig.replace(parameters=new_params)
-
         return wrapper
-    return decorator
 
+    return decorator
 class BaseInstanaClient:
     """Base client for Instana API with common functionality."""
 

@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Union
 from fastmcp import Context
 from mcp.types import ToolAnnotations
 
+from src.core.timestamp_utils import convert_datetime_param
 from src.core.utils import BaseInstanaClient, register_as_tool
 
 logger = logging.getLogger(__name__)
@@ -132,9 +133,10 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
             params:
                 - application_id (optional): application ID (either this or snapshot_id required)
                 - snapshot_id (optional): snapshot ID (either this or application_id required)
-                - to (optional): timestamp in milliseconds
+                - to (optional): timestamp - milliseconds OR datetime string (e.g., "19 March 2026, 2:47 PM|IST")
+                    If timezone not specified, defaults to UTC
                 - window_size (optional): time window in milliseconds
-            Example: params={"application_id": "app-123", "snapshot_id": "snap-456", "to": 1234567890000, "window_size": 3600000}
+            Example: params={"application_id": "app-123", "snapshot_id": "snap-456", "to": "19 March 2026, 2:47 PM|IST", "window_size": 3600000}
 
             Get action types:
             operation="get_action_types"
@@ -149,7 +151,8 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
             operation="list"
             params (all optional):
                 - window_size: time window in milliseconds
-                - to: timestamp in milliseconds
+                - to: timestamp - milliseconds OR datetime string (e.g., "19 March 2026, 2:47 PM|IST")
+                    If timezone not specified, defaults to UTC
                 - page: page number
                 - page_size: items per page
                 - target_snapshot_id: filter by snapshot ID
@@ -167,8 +170,9 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
             params:
                 - action_instance_id (required): instance UUID
                 - window_size (optional): time window in milliseconds (default: 10 minutes)
-                - to (optional): timestamp in milliseconds (default: current time)
-            Example: params={"action_instance_id": "instance-uuid", "window_size": 600000, "to": 1234567890000}
+                - to (optional): timestamp - milliseconds OR datetime string (e.g., "19 March 2026, 2:47 PM|IST")
+                    If timezone not specified, defaults to UTC
+            Example: params={"action_instance_id": "instance-uuid", "window_size": 600000, "to": "19 March 2026, 2:47 PM|IST"}
 
         Args:
             resource_type: "catalog" or "history"
@@ -180,17 +184,11 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
             Dictionary with results from the appropriate tool
 
         Examples:
-            # List all available actions
             resource_type="catalog", operation="get_actions"
-
-            # Search for CPU-related actions
             resource_type="catalog", operation="get_action_matches", params={"payload": {"name": "CPU", "description": "monitoring"}}
-
-            # List recent action executions
-            resource_type="history", operation="list", params={"window_size": 3600000, "page_size": 20}
-
-            # Get details of a specific execution
-            resource_type="history", operation="get_details", params={"action_instance_id": "instance-uuid"}
+            resource_type="catalog", operation="get_action_matches_by_id_and_time_window", params={"application_id": "app-123", "to": "19 March 2026, 2:47 PM|IST", "window_size": 3600000}
+            resource_type="history", operation="list", params={"window_size": 3600000, "to": 1234567890000, "page_size": 20}
+            resource_type="history", operation="get_details", params={"action_instance_id": "instance-uuid", "to": "19 March 2026, 2:47 PM|IST"}
         """
         try:
             logger.info(f"Received: resource_type={resource_type}, operation={operation}")
@@ -313,6 +311,23 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
                 to = params.get(PARAM_TO)
                 window_size = params.get(PARAM_WINDOW_SIZE)
 
+                # Convert datetime string to timestamp for 'to' if provided
+                conversion_result = convert_datetime_param(
+                    to,
+                    PARAM_TO,
+                    default_timezone="UTC"
+                )
+
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "resource_type": RESOURCE_TYPE_CATALOG,
+                        "operation": operation
+                    }
+
+                # Update the converted value
+                to = conversion_result["value"]
+
                 # Validate that at least one ID is provided
                 if not application_id and not snapshot_id:
                     logger.warning(f"[_handle_catalog_operation] Missing required parameter: either {PARAM_APPLICATION_ID} or {PARAM_SNAPSHOT_ID}")
@@ -401,6 +416,24 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
                 # Extract all list parameters
                 window_size = params.get(PARAM_WINDOW_SIZE)
                 to = params.get(PARAM_TO)
+
+                # Convert datetime string to timestamp for 'to' if provided
+                conversion_result = convert_datetime_param(
+                    to,
+                    PARAM_TO,
+                    default_timezone="UTC"
+                )
+
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "resource_type": RESOURCE_TYPE_HISTORY,
+                        "operation": operation
+                    }
+
+                # Update the converted value
+                to = conversion_result["value"]
+
                 page = params.get(PARAM_PAGE)
                 page_size = params.get(PARAM_PAGE_SIZE)
                 target_snapshot_id = params.get(PARAM_TARGET_SNAPSHOT_ID)
@@ -444,6 +477,24 @@ class AutomationSmartRouterMCPTool(BaseInstanaClient):
                 action_instance_id = params.get(PARAM_ACTION_INSTANCE_ID)
                 window_size = params.get(PARAM_WINDOW_SIZE)
                 to = params.get(PARAM_TO)
+
+                # Convert datetime string to timestamp for 'to' if provided
+                conversion_result = convert_datetime_param(
+                    to,
+                    PARAM_TO,
+                    default_timezone="UTC"
+                )
+
+                if "error" in conversion_result:
+                    return {
+                        "error": conversion_result["error"],
+                        "resource_type": RESOURCE_TYPE_HISTORY,
+                        "operation": operation
+                    }
+
+                # Update the converted value
+                to = conversion_result["value"]
+
                 if not action_instance_id:
                     logger.warning(f"[_handle_history] Missing required parameter: {PARAM_ACTION_INSTANCE_ID}")
                     return {

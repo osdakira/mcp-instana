@@ -224,6 +224,108 @@ class TestReleasesPrompts(unittest.TestCase):
         )
         self.assertTrue(found)
 
+    def test_get_all_releases_prompt_renders_defaults(self):
+        result = ReleasesPrompts.get_all_releases()
+        self.assertIn("(not specified)", result)
+        self.assertIn("Get all releases", result)
+
+    def test_get_all_releases_prompt_renders_values(self):
+        result = ReleasesPrompts.get_all_releases(
+            from_time=1,
+            to_time=2,
+            name_filter="prod",
+            page_number=3,
+            page_size=50,
+        )
+        self.assertIn("From time: 1", result)
+        self.assertIn("To time: 2", result)
+        self.assertIn("Name filter: prod", result)
+        self.assertIn("Page number: 3", result)
+        self.assertIn("Page size: 50", result)
+
+    def test_get_release_prompt_contains_release_id(self):
+        result = ReleasesPrompts.get_release(release_id="rel-123")
+        self.assertIn("rel-123", result)
+
+    def test_create_release_prompt_renders_optional_defaults(self):
+        result = ReleasesPrompts.create_release(name="Release A", start=123456)
+        self.assertIn("Release A", result)
+        self.assertIn("Start time: 123456", result)
+        self.assertIn("(not specified)", result)
+
+    def test_update_release_prompt_renders_all_values(self):
+        result = ReleasesPrompts.update_release(
+            release_id="rel-1",
+            name="Release B",
+            start=999,
+            applications=[{"id": "app-1"}],
+            services=[{"id": "svc-1"}],
+        )
+        self.assertIn("Release ID: rel-1", result)
+        self.assertIn("Name: Release B", result)
+        self.assertIn("Start time: 999", result)
+        self.assertIn("app-1", result)
+        self.assertIn("svc-1", result)
+
+    def test_delete_release_prompt_contains_release_id(self):
+        result = ReleasesPrompts.delete_release(release_id="rel-del")
+        self.assertIn("rel-del", result)
+
+    def test_analyze_application_performance_prefers_release_name_lookup(self):
+        result = ReleasesPrompts.analyze_application_performance_after_release(
+            release_name="my-release",
+            application_name="checkout",
+        )
+        self.assertIn("name_filter='my-release'", result)
+        self.assertIn("Application: checkout", result)
+
+    def test_analyze_application_performance_prefers_release_id_when_both_provided(self):
+        result = ReleasesPrompts.analyze_application_performance_after_release(
+            release_name="my-release",
+            release_id="rel-123",
+        )
+        self.assertIn("release ID 'rel-123'", result)
+        self.assertIn("release_id takes precedence", result)
+
+    def test_analyze_application_performance_requires_release_identifier(self):
+        result = ReleasesPrompts.analyze_application_performance_after_release()
+        self.assertIn("Either release_name or release_id must be provided", result)
+
+    def test_check_incidents_after_release_with_release_id(self):
+        result = ReleasesPrompts.check_incidents_after_release(
+            release_id="rel-456",
+            severity="critical",
+        )
+        self.assertIn("release ID 'rel-456'", result)
+        self.assertIn("Severity filter: critical", result)
+
+    def test_check_incidents_after_release_without_identifier(self):
+        result = ReleasesPrompts.check_incidents_after_release()
+        self.assertIn("Either release_name or release_id must be provided", result)
+
+    def test_analyze_kpi_evolution_after_release_defaults(self):
+        result = ReleasesPrompts.analyze_kpi_evolution_after_release(release_name="release-x")
+        self.assertIn("name_filter='release-x'", result)
+        self.assertIn("default: latency, error_rate, throughput, calls", result)
+        self.assertIn("same duration before release", result)
+
+    def test_analyze_kpi_evolution_after_release_with_custom_values(self):
+        result = ReleasesPrompts.analyze_kpi_evolution_after_release(
+            release_id="rel-999",
+            application_name="payments",
+            kpis=["latency", "throughput"],
+            comparison_period="24h before",
+        )
+        self.assertIn("release ID 'rel-999'", result)
+        self.assertIn("Application: payments", result)
+        self.assertIn("['latency', 'throughput']", result)
+        self.assertIn("24h before", result)
+        found = any(
+            isinstance(item, staticmethod) and item.__func__ == ReleasesPrompts.create_release
+            for item in PROMPT_REGISTRY
+        )
+        self.assertTrue(found)
+
     def test_update_release_prompt_content(self):
         """Test that update_release prompt is properly registered."""
         found = any(

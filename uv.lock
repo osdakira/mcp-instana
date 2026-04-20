@@ -861,7 +861,7 @@ wheels = [
 
 [[package]]
 name = "instana-client"
-version = "1.0.6"
+version = "1.0.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -869,9 +869,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/93/07/749128ea5ef78bcc518359060b63103cd29a275d93493cfd8ab6e8bf2bfd/instana_client-1.0.6.tar.gz", hash = "sha256:8ca686f549d44f5693bec80bb00ff9bdfa20ae34ac511c6046952fa42118ac84", size = 561850, upload-time = "2026-03-18T11:41:53.602Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/2e/dd32cc791f00f6bec70217c161cd323cf7b1bf685e84320184ecebbf9132/instana_client-1.0.7.tar.gz", hash = "sha256:f44ef5a44ed2f9ad17b82136a023237ea40cb9f9d474897c4241ed438f77ab9b", size = 591984, upload-time = "2026-04-17T11:27:19.571Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/33/e10ead309b9ffa4dc70e69fdc378180a20e736a797dc67615f1de4c499c1/instana_client-1.0.6-py3-none-any.whl", hash = "sha256:574d4058e8cf4206c24f844ed18f1c50bd90d8acceba79b654674efe068620ad", size = 1206639, upload-time = "2026-03-18T11:41:28.454Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/ff/064a058c5471e1d193c6f8ca1257ed63da7e03d35cc56103daabe49d9935/instana_client-1.0.7-py3-none-any.whl", hash = "sha256:6b662c3ab3190c6bb327d0ba5c41c93239b045ff549ef05e4f7234b1018b507d", size = 1245735, upload-time = "2026-04-17T11:27:18.038Z" },
 ]
 
 [[package]]
@@ -1170,10 +1170,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.10.1" },
-    { name = "fastmcp", specifier = ">=2.14.5" },
-    { name = "instana-client", specifier = "==1.0.6" },
+    { name = "fastmcp", specifier = ">=2.4.5,<=3.1.1" },
+    { name = "instana-client", specifier = "==1.0.7" },
     { name = "lazy-imports" },
-    { name = "mcp" },
+    { name = "mcp", specifier = ">=1.26.0,<1.27.0" },
     { name = "pydantic", specifier = "==2.11.7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.1.0" },

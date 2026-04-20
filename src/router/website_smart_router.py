@@ -12,7 +12,7 @@ from fastmcp import Context
 from mcp.types import ToolAnnotations
 
 from src.core.timestamp_utils import convert_nested_datetime_param
-from src.core.utils import BaseInstanaClient, register_as_tool
+from src.core.utils import BaseInstanaClient, normalize_beacon_type, register_as_tool
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +322,6 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
             )
 
             # Normalize beacon_type to camelCase format (API expects camelCase)
-            # Map common uppercase formats to correct camelCase
             beacon_type_map = {
                 "PAGELOAD": "pageLoad",
                 "PAGECHANGE": "pageChange",
@@ -332,11 +331,10 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
                 "ERROR": "error"
             }
 
-            if beacon_type and isinstance(beacon_type, str) and beacon_type.upper() in beacon_type_map:
-                normalized_beacon_type = beacon_type_map[beacon_type.upper()]
-                if beacon_type != normalized_beacon_type:
-                    logger.debug(f"Normalized beacon_type from '{beacon_type}' to '{normalized_beacon_type}'")
-                    beacon_type = normalized_beacon_type
+            normalized_beacon_type = normalize_beacon_type(beacon_type, beacon_type_map)
+            if beacon_type != normalized_beacon_type:
+                logger.debug(f"Normalized beacon_type from '{beacon_type}' to '{normalized_beacon_type}'")
+                beacon_type = normalized_beacon_type
 
             # Pass parameters to the client
             result = await self.website_catalog_client.get_website_tag_catalog(

@@ -7,6 +7,7 @@ This module provides application analyze tool functionality for Instana monitori
 import json
 import logging
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -218,7 +219,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
-            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            # Use tempfile.gettempdir() for secure, cross-platform temporary directory
+            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", tempfile.gettempdir())
             output_path = f"{output_dir}/instana_trace_details_{id}_{timestamp}.jsonl"
 
             # Fetch trace details
@@ -266,7 +268,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         """Parse payload string to dictionary."""
         if not isinstance(payload, str):
             return payload if payload is not None else {}
-
         logger.debug("Payload is a string, attempting to parse")
         try:
             return json.loads(payload)
@@ -303,7 +304,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             "canLoadMore": can_load_more,
             "totalHits": total_hits
         }
-
         # Add cursor fields if more data available
         if items and can_load_more and "cursor" in items[-1]:
             cursor = items[-1]["cursor"]
@@ -311,7 +311,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                 response["ingestionTime"] = cursor["ingestionTime"]
             if "offset" in cursor:
                 response["offset"] = cursor["offset"]
-
         return response
 
     @with_header_auth(ApplicationAnalyzeApi)
@@ -380,7 +379,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
-            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            # Use tempfile.gettempdir() for secure, cross-platform temporary directory
+            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", tempfile.gettempdir())
             output_path = f"{output_dir}/instana_traces_{timestamp}.jsonl"
 
             # Call API

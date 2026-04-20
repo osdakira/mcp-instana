@@ -2,6 +2,7 @@
 E2E tests for Instana Client Base Module
 """
 
+import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +10,6 @@ import pytest
 import requests
 
 from src.core.utils import (
-    MCP_TOOLS,
     BaseInstanaClient,
     register_as_tool,
     with_header_auth,
@@ -31,9 +31,9 @@ class TestInstanaClientBaseE2E:
     @pytest.mark.mocked
     async def test_register_as_tool_decorator(self):
         """Test that the register_as_tool decorator properly registers functions."""
-        # Clear the registry before testing
-        original_tools = MCP_TOOLS.copy()
-        MCP_TOOLS.clear()
+        utils_module = importlib.import_module("src.core.utils")
+        original_tools = utils_module.MCP_TOOLS.copy()
+        utils_module.MCP_TOOLS.clear()
 
         try:
             # Define a test function and register it
@@ -42,12 +42,12 @@ class TestInstanaClientBaseE2E:
                 return {"result": "success"}
 
             # Check that the function was registered
-            assert "test_tool" in MCP_TOOLS
-            assert MCP_TOOLS["test_tool"] == test_tool
+            assert "test_tool" in utils_module.MCP_TOOLS
+            assert utils_module.MCP_TOOLS["test_tool"] == test_tool
         finally:
             # Restore the original tools
-            MCP_TOOLS.clear()
-            MCP_TOOLS.update(original_tools)
+            utils_module.MCP_TOOLS.clear()
+            utils_module.MCP_TOOLS.update(original_tools)
 
     @pytest.mark.asyncio
     @pytest.mark.mocked

@@ -7,13 +7,9 @@ This script runs all tests (both synchronous and asynchronous) with coverage ana
 
 import argparse
 import os
+import subprocess
 import sys
 from typing import List, Optional
-
-import coverage
-
-# Import the run_all_tests function from run_all_tests.py
-from tests.run_all_tests import run_all_tests
 
 
 def run_all_tests_with_coverage(
@@ -40,32 +36,60 @@ def run_all_tests_with_coverage(
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, project_root)
 
-    # Set up coverage with configuration
-    cov = coverage.Coverage(
-        include=include_patterns,
-        omit=omit_patterns
-    )
+    # Run coverage in the subprocess so pytest execution is actually measured.
+    pytest_targets = [
+        "tests/application",
+        "tests/automation",
+        "tests/core",
+        "tests/custom_dashboard",
+        "tests/event",
+        "tests/infrastructure",
+        "tests/log",
+        "tests/prompts",
+        "tests/releases",
+        "tests/router",
+        "tests/slo",
+        "tests/test_observability.py",
+        "tests/website",
+    ]
 
-    # Start coverage measurement
-    cov.start()
+    coverage_command = [
+        sys.executable,
+        "-m",
+        "coverage",
+        "run",
+        "--source=src",
+    ]
 
-    try:
-        # Run all tests using the imported function
-        success = run_all_tests(test_path, verbose)
-    finally:
-        # Stop coverage measurement
-        cov.stop()
-        cov.save()
+    for pattern in omit_patterns or []:
+        coverage_command.append(f"--omit={pattern}")
 
-        # Generate the requested report
-        if report_type == 'html':
-            cov.html_report()
-            print("HTML report generated in htmlcov directory")
-        elif report_type == 'xml':
-            cov.xml_report()
-            print("XML report generated: coverage.xml")
-        else:
-            cov.report()
+    coverage_command.extend(["-m", "pytest"])
+
+    if test_path:
+        coverage_command.append(test_path)
+    else:
+        coverage_command.extend(pytest_targets)
+
+    if verbose:
+        coverage_command.append("-v")
+
+    completed = subprocess.run(coverage_command, check=False)
+    success = completed.returncode == 0
+
+    if report_type == 'html':
+        report_command = [sys.executable, "-m", "coverage", "html"]
+        print("HTML report generated in htmlcov directory")
+    elif report_type == 'xml':
+        report_command = [sys.executable, "-m", "coverage", "xml"]
+        print("XML report generated: coverage.xml")
+    else:
+        report_command = [sys.executable, "-m", "coverage", "report"]
+
+    for pattern in omit_patterns or []:
+        report_command.append(f"--omit={pattern}")
+
+    subprocess.run(report_command, check=False)
 
     return success
 
@@ -82,8 +106,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Default include pattern to focus on source code
-    include_patterns = args.include if args.include else ["src/*"]
+    # Default include pattern to focus on all source code, including nested packages
+    include_patterns = args.include if args.include else ["src/*", "src/**/*.py"]
 
     # Default omit pattern to exclude tests and other non-source files
     omit_patterns = args.omit if args.omit else ["tests/*", "setup.py"]

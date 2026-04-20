@@ -70,15 +70,14 @@ class WebsiteCatalogMCPTools(BaseInstanaClient):
         """
         Get website monitoring metrics catalog.
 
-        This API endpoint retrieves all available metric IDs for website monitoring.
-        Returns a simple list of valid metric IDs that can be used in queries.
-        This serves as schema information for LLM to know what metrics are available.
+        Returns metric definitions including metricId, label, description, formatter,
+        aggregations, beaconTypes, and other metadata to help agents construct valid queries.
 
         Args:
             ctx: The MCP context (optional)
 
         Returns:
-            Dictionary containing list of valid metric IDs
+            Dictionary containing list of metrics with full metadata
         """
         try:
             logger.debug("[get_website_catalog_metrics] Called")
@@ -112,8 +111,9 @@ class WebsiteCatalogMCPTools(BaseInstanaClient):
             metric_ids = [metric.get("metricId") for metric in full_metrics if metric.get("metricId")]
 
             result_dict = {
-                "metric_ids": metric_ids,
-                "count": len(metric_ids)
+                "metrics": full_metrics,
+                "count": len(metric_ids),
+                "description": "Website monitoring metrics catalog with full metadata"
             }
 
             logger.debug(f"[get_website_catalog_metrics] Returning {len(metric_ids)} metric IDs from catalog")

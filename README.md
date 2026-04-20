@@ -1,8 +1,9 @@
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-<!-- mcp-name: io.github.instana/mcp-instana -->
+## Table of Contents
 
 - [MCP Server for IBM Instana](#mcp-server-for-ibm-instana)
+  - [📚 Quick Links](#-quick-links)
   - [Architecture Overview](#architecture-overview)
   - [Workflow](#workflow)
   - [Prerequisites](#prerequisites)
@@ -11,6 +12,8 @@
       - [Installing uv](#installing-uv)
       - [Setting Up the Environment](#setting-up-the-environment)
     - [Header-Based Authentication for Streamable HTTP Mode](#header-based-authentication-for-streamable-http-mode)
+      - [1. API Token Authentication (Direct API Calls)](#1-api-token-authentication-direct-api-calls)
+      - [2. Session Token Authentication (UI-Initiated Calls)](#2-session-token-authentication-ui-initiated-calls)
   - [Starting the Local MCP Server](#starting-the-local-mcp-server)
     - [Server Command Options](#server-command-options)
       - [Using the CLI (PyPI Installation)](#using-the-cli-pypi-installation)
@@ -31,9 +34,12 @@
       - [Streamable HTTP Mode](#streamable-http-mode)
       - [Stdio Mode](#stdio-mode)
     - [Kiro Setup](#kiro-setup)
+      - [Streamable HTTP Mode (Recommended for Kiro)](#streamable-http-mode-recommended-for-kiro)
+      - [Stdio Mode](#stdio-mode-1)
     - [GitHub Copilot](#github-copilot)
       - [Streamable HTTP Mode](#streamable-http-mode-1)
-      - [Stdio Mode](#stdio-mode-1)
+      - [Stdio Mode](#stdio-mode-2)
+    - [Mistral AI](#mistral-ai)
   - [Supported Features](#supported-features)
   - [Available Tools](#available-tools)
   - [Tool Filtering](#tool-filtering)
@@ -42,7 +48,6 @@
       - [Using CLI (PyPI Installation)](#using-cli-pypi-installation-3)
       - [Using Development Installation](#using-development-installation-4)
     - [Benefits of Tool Filtering](#benefits-of-tool-filtering)
-  - [Example Prompts](#example-prompts)
   - [Docker Deployment](#docker-deployment)
     - [Docker Architecture](#docker-architecture)
       - [**pyproject.toml** (Development)](#pyprojecttoml-development)
@@ -60,6 +65,14 @@
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 # MCP Server for IBM Instana
+
+## 📚 Quick Links
+
+- **[Tools & Examples](docs/TOOLS_AND_EXAMPLES.md)** - Comprehensive tool documentation with real-world examples
+- **[Privacy Policy](docs/PRIVACY.md)** - Data handling and privacy information
+- **[Docker Deployment Guide](DOCKER.md)** - Comprehensive Docker deployment, multi-architecture builds, and production setup
+
+---
 
 The Instana MCP server enables seamless interaction with the Instana observability platform, allowing you to access real-time observability data directly within your development workflow.
 
@@ -181,16 +194,47 @@ When using **Streamable HTTP mode**, you must pass Instana credentials via HTTP 
 - Avoiding credential storage in environment variables
 - Enabling the use of different credentials for different requests
 - Supporting shared environments where environment variable modification is restricted
+- Supporting both API token and session-based authentication
 
+**Supported Authentication Modes:**
+
+#### 1. API Token Authentication (Direct API Calls)
 **Required Headers:**
 - `instana-base-url`: Your Instana instance URL
 - `instana-api-token`: Your Instana API token
 
-**Authentication Flow:**
-1. HTTP headers (`instana-base-url`, `instana-api-token`) must be present in each request
-2. Requests without these headers will fail
+**Example:**
+```bash
+--header "instana-base-url: https://your-instance.instana.io"
+--header "instana-api-token: your-api-token"
+```
 
-This design ensures secure credential transmission where credentials are only sent via headers for each request, making it suitable for scenarios requiring different credentials or avoiding credential storage in environment variables.
+#### 2. Session Token Authentication (UI-Initiated Calls)
+**Required Headers:**
+- `instana-base-url`: Your Instana instance URL
+- `instana-auth-token`: Session authentication token from UI backend
+- `instana-csrf-token`: CSRF token from UI backend
+- `instana-cookie-name`: (Optional) Cookie name for session auth (default: `instanaAuthToken`)
+
+**Example:**
+```bash
+--header "instana-base-url: https://your-instance.instana.io"
+--header "instana-auth-token: your-session-token"
+--header "instana-csrf-token: your-csrf-token"
+--header "instana-cookie-name: in-token"
+```
+
+**Authentication Priority:**
+1. **API Token** (if provided) - Takes precedence
+2. **Session Tokens** (if both auth_token and csrf_token provided)
+3. **Environment Variable** (`INSTANA_API_TOKEN`) - Fallback
+
+**Authentication Flow:**
+1. HTTP headers must be present in each request
+2. Server validates credentials based on priority order
+3. Requests without valid authentication will fail
+
+This design ensures secure credential transmission and supports multiple authentication flows including UI-initiated calls via WebSocket → Coordinator → MCP Server.
 
 ## Starting the Local MCP Server
 
@@ -221,7 +265,7 @@ uv run src/core/server.py [OPTIONS]
 - `--log-level <level>`: Set the logging level (choices: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)
 - `--tools <categories>`: Comma-separated list of tool categories to enable (e.g., infra,app,events,website). Enabling a category will also enable its related prompts. For example: `--tools infra` enables the infra tools and all infra-related prompts.
 - `--list-tools`: List all available tool categories and exit
-- `--port <port>`: Port to listen on (default: 8080)
+- `--port <port>`: MCP server port (default: 8080, can be overridden with PORT env var)
 - `--help`: Show help message and exit
 
 ### Starting in Streamable HTTP Mode
@@ -262,6 +306,9 @@ uv run src/core/server.py --transport streamable-http --log-level WARNING
 # Start with specific tool and prompts categories only
 uv run src/core/server.py --transport streamable-http --tools infra,events
 
+# Start with custom port
+uv run src/core/server.py --transport streamable-http --port 9000
+
 # Combine options (specific log level, custom tools and prompts)
 uv run src/core/server.py --transport streamable-http --log-level DEBUG --tools app,events
 ```
@@ -270,8 +317,8 @@ uv run src/core/server.py --transport streamable-http --log-level DEBUG --tools 
 - Uses HTTP headers for authentication (no environment variables needed)
 - Supports different credentials per request
 - Better suited for shared environments
-- Default port: 8080
-- Endpoint: `http://0.0.0.0:8080/mcp/`
+- MCP server default port: 8080
+- MCP endpoint: `http://0.0.0.0:8080/mcp/`
 
 ### Starting in Stdio Mode
 
@@ -361,7 +408,7 @@ Once started, you can verify the server is running:
 
 **For Streamable HTTP mode:**
 ```bash
-# Check server health
+# Check MCP server
 curl http://0.0.0.0:8080/mcp/
 
 # Or with custom port
@@ -756,6 +803,42 @@ Here is an example of a GitHub Copilot response:
 
 ![GitHub Copilot Response](./images/copilotResponse.png)
 
+### Mistral AI
+
+Mistral AI supports MCP integration exclusively through Streamable HTTP mode.
+
+**Step 1: Launch the MCP Server in Streamable HTTP Mode**
+
+Start the MCP server in Streamable HTTP mode by providing your Instana credentials. Run the following command:
+
+```bash
+uv run src/core/server.py --transport streamable-http \
+  --api-token "your_instana_api_token" \
+  --base-url "https://your-instana-instance.instana.io" \
+  --port 8080
+```
+
+**Step 2: Set Up Port Forwarding with Ngrok**
+
+Configure port forwarding to expose your local server. Follow the [Ngrok setup documentation](https://dashboard.ngrok.com/get-started/setup/macos) for detailed instructions.
+
+**Step 3: Configure Mistral AI**
+
+1. Navigate to the **Intelligence** tab in the left sidebar and select **Connectors**
+   ![Mistral HomePage](./images/mistral-homepage.png)
+
+2. Click **Add Connector**
+   ![Connector](./images/mistral-connector.png)
+
+3. Create a custom connector by entering a connector name and the Ngrok-forwarded MCP server URL
+   ![Custom Connector](./images/mistral-custom-connector.png)
+
+4. Start a new chat session and verify that MCP tools are enabled. You can view the response here
+   ![Testing MCP connection](./images/mistral-new-chat.png)
+   ![Response](./images/mistral-response.png)
+
+
+
 ## Supported Features
 
 - [x] **Unified Application & Infrastructure Management** (`manage_instana_resources`)
@@ -787,15 +870,13 @@ Here is an example of a GitHub Copilot response:
   - [x] Advanced filtering by tags and properties
   - [x] Grouping and ordering capabilities
   - [x] Time range queries
-- [x] **Unified Events Management** (`manage_events_resources`)
+- [x] **Unified Events Management** (`manage_events`)
   - [x] Events Monitoring
     - [x] Get Event by ID (operation="get_event")
     - [x] Get Events by IDs (operation="get_events_by_ids")
     - [x] Get Agent Monitoring Events (operation="get_agent_monitoring_events")
     - [x] Get Kubernetes Info Events (operation="get_kubernetes_info_events")
-    - [x] Get Issues (operation="get_issues")
-    - [x] Get Incidents (operation="get_incidents")
-    - [x] Get Changes (operation="get_changes")
+    - [x] Get Events (operation="get_events")
   - [x] Smart routing to specialized event tools
   - [x] Unified parameter validation (time ranges, max_events)
   - [x] Support for natural language time ranges ("last 24 hours", "last 2 days")
@@ -841,15 +922,16 @@ Here is an example of a GitHub Copilot response:
 
 | Tool                                                          | Category                       | Description                                            |
 |---------------------------------------------------------------|--------------------------------|------------------------------------------------------- |
-| `manage_instana_resources`                                    | Application & Infrastructure   | Unified tool for managing application metrics, alert configs, settings, and catalog |
-| `manage_website_resources`                                    | Website Monitoring             | Unified smart router for website analyze, catalog, configuration, and advanced config operations |
+| `manage_applications`                                         | Application & Infrastructure   | Unified tool for managing application metrics, alert configs, settings, and catalog |
+| `manage_websites`                                             | Website Monitoring             | Unified smart router for website analyze, catalog, configuration, and advanced config operations |
 | `manage_custom_dashboards`                                    | Custom Dashboards              | Unified tool for managing custom dashboard CRUD operations |
 | `analyze_infrastructure`                                      | Infrastructure Analyze         | Two-pass infrastructure analysis with entity/metric elicitation |
-| `manage_automation`                                           | Automation                     | Unified smart router for automation: browse action catalog (get_actions, get_action_details, get_action_matches, get_action_types, get_action_tags) and view execution history (list, get_details) |
-| `manage_events_resources`                                     | Events                         | Unified smart router for events monitoring: get event by ID, get events by IDs, Kubernetes events, agent monitoring, issues, incidents, and changes |
-| `manage_slo`                                                  | SLO Management                 | Unified smart router for SLO configurations, reports, alerts, and correction windows with intelligent timezone handling |
+| `manage_automation`                                           | Automation                     | Unified smart router for automation: browse action catalog and view execution history |
+| `manage_events`                                               | Events                         | Unified smart router for events monitoring: get event by ID, get events by IDs, Kubernetes events, agent monitoring events and all events |
 | `manage_slo`                                                  | SLO Management                 | Unified smart router for SLO configurations, reports, alerts, and correction windows with intelligent timezone handling |
 | `manage_releases`                                             | Release Management             | Unified smart router for release tracking: list releases with pagination and name filtering, get release details, create/update/delete releases with timezone support |
+
+👉 **For detailed tool documentation, capabilities, and technical reference, see [Tools & Examples](docs/TOOLS_AND_EXAMPLES.md)**
 
 ## Tool Filtering
 
@@ -880,7 +962,7 @@ The MCP server supports selective tool loading to optimize performance and reduc
   - Action History: list execution instances with filtering, get execution details
 
 - **`events`**: Event monitoring tools
-  - Events: Kubernetes events, agent monitoring, incidents, issues, changes and system event tracking
+  - Events: Kubernetes events, agent monitoring and system event tracking
 
 - **`website`**: Website monitoring tools
   - Website Metrics: Performance measurement for websites
@@ -971,451 +1053,7 @@ uv run src/core/server.py --list-tools
 - **Clarity**: Focus on specific use cases (e.g., only infrastructure monitoring)
 - **Resource Efficiency**: Lower CPU and network usage
 
-## SLO Management
-
-The SLO Management tool (`manage_slo`) provides comprehensive Service Level Objective management with intelligent routing to specialized handlers.
-
-### Available Resource Types
-
-- **configuration**: SLO definitions and targets
-  - Create, read, update, delete SLO configurations
-  - Support for time-based and event-based indicators
-  - Application and service scoping
-
-- **report**: Performance reports and metrics
-  - Generate detailed SLO reports with SLI values and error budgets
-  - Time-series charts and burn rate analysis
-  - Correction window exclusions
-
-- **alert**: Alert configurations for SLO violations
-  - Error budget monitoring and burn rate tracking
-  - Configurable thresholds and notification channels
-  - Enable/disable alert management
-
-- **correction**: Maintenance windows and corrections
-  - Planned downtime exclusions from SLO calculations
-  - Recurring maintenance schedules
-  - Active/inactive window management
-
-### Key Features
-
-- **Unified Interface**: Single tool for all SLO operations with consistent parameter structure
-- **Intelligent Timezone Handling**: Automatic timezone elicitation for datetime inputs (format: `"datetime|timezone"`)
-- **Two-Pass Elicitation**: Interactive parameter gathering for complex operations
-- **Resource Type Routing**: Intelligent routing to specialized clients based on resource type
-
-## Release Management
-
-The Release Management tool (`manage_releases`) provides release tracking and deployment management with efficient pagination and name-based filtering.
-
-### Available Operations
-
-- **get_all_releases**: List releases with pagination and filtering
-  - Supports time-range filtering (`var_from`, `to`)
-  - Name-based filtering with case-insensitive substring matching
-  - Efficient pagination with `page_number` and `page_size`
-  - Returns navigation metadata (`has_next_page`, `has_previous_page`, `total_pages`)
-
-- **get_release**: Get specific release details by ID
-
-- **create_release**: Create new release with applications and services
-
-- **update_release**: Update existing release configuration
-
-- **delete_release**: Delete a release by ID
-
-### Key Features
-
-- **Efficient Pagination**: Page-based navigation avoids redundant data fetching (replaces old `max_results` approach)
-- **Name Filtering**: Case-insensitive substring matching on release names
-- **Timezone Support**: Automatic timezone elicitation for datetime inputs
-- **Token Efficiency**: Fetch only needed data, reducing LLM context consumption
-
-
-## Example Prompts
-
-Here are some example prompts (with their corresponding results) that you can use to get started with the Instana Observability Platform API:
-
-- **Query 1**
-```
-We want to understand what search criteria are available in Instana so that 
-we can find the correct search tags for specific entities and 
-build complex queries to filter entities in Instana. Can you help with this?
-```
-
-- **Result 1**
-```
-Here is the list of search criteria available in Instana:
-
-entity.jvm.dropwizard.timer
-entity.otel
-host.name
-entity.dropwizard.meter
-entity.springboot.name
-entity.kubernetes.node.name
-entity.tuxedoapp.tuxedoService.name
-entity.ace.integrationServer.name
-entity.containerd.containerIdentity.tuxedo.domain.tuxconfig
-entity.host.mac
-```
-
-- **Query 2**
-```
-Our application deployments seem to be failing intermittently.
-Can you fetch recent Kubernetes info events from Instana for the last 1 day
-to help identify what might be causing these deployment issues?
-```
-
-- **Result 2**
-![Kubernetes Events](./images/kubernetesEvents.png)
-
-- **Query 3**
-```
-We are seeing errors in agent logs and experiencing issues with agent behavior. 
-Can you fetch recent agent monitoring events from Instana 
-to help figure out what might be causing these issues?
-```
-
-- **Result 3**
-```
-The recent agent monitoring events from Instana indicate that there are several issues with the agent behavior, including:
-
-JVM attach generic issues: There are 36 events related to JVM attach generic issues, affecting multiple entities such as Process (/etc/java-8-64bit-jdk/jdk8u402-b06/bin/java), Process (/etc/java-16-64bit-jdk/jdk-16.0.2+7/bin/java), and others.
-Python sensor not installed: There are 7 events related to Python sensor not installed issues, affecting entities such as Process (/usr/bin/python3), Process (/usr/libexec/platform-python), and others.
-PostgreSQL authentication failed: There are 2 events related to PostgreSQL authentication failed issues, affecting entities such as PostgreSQL DB (PostgreSQL) and PostgreSQL DB (PostgreSQL @5432).
-PostgreSQL connection failed: There is 1 event related to PostgreSQL connection failed issues, affecting the entity PostgreSQL DB (PostgreSQL @5432).
-Spring Boot actuator not configured: There is 1 event related to Spring Boot actuator not configured issues, affecting the entity Spring Boot App (sqs-demo-application 0.0.1).
-These issues may be causing the errors in the agent logs and affecting the agent behavior. It is recommended to investigate and resolve these issues to ensure proper agent functionality.
-```
-
-- **Query 4**
-```
-We're setting up comprehensive application performance monitoring across our entire infrastructure. 
-Can you retrieve all the applications that Instana has discovered? I need to see which applications are available 
-so I can configure monitoring dashboards, set up alerts, and establish performance baselines for each service in our environment.
-```
-
-- **Result 4**
-```
-The discovered applications are:
-
-Ovcharov
-AWS Resources
-Cedric OTel
-Cedric Sein Otel
-Col
-Damian - Sample Go App
-Fofo
-INSTANA-ECOSYSTEM-SAP-CF
-Kate
-```
-
-- **Query 5**
-```
-We're investigating an issue for the snapshot id "qjNuS6pmtYkxCBKwqsfxvHylisU" and 
-want to see which hosts might be affected. Can you get the hosts for this snapshot id?
-```
-
-- **Result 5**
-```
-The hosts related to the snapshot with ID "qjNuS6pmtYkxCBKwqsfxvHylisU" are:
-
-XDrSHZ5iq0BV_bPxQ6FFGsbxqv4
-There is 1 host related to this snapshot.
-```
-
-- **Query 6**
-```
-We want to get specific metrics for Amazon MQ in Instana. Can you show all possible tags
-I can use for the plugin awsMq?
-```
-
-- **Result 6**
-```
-The following tags are available for the plugin "awsMq":
-
-aws.accountId
-aws.arn
-aws.mq.brokerName
-aws.mq.deploymentMode
-aws.mq.engineVersion
-aws.mq.instanceType
-dfq.selftype
-dfq.type
-label
-metricId
-type
-zone
-These tags can be used to filter and group metrics for Amazon MQ in Instana.
-```
-
-- **Query 7**
-```
-We want to troubleshoot issues with custom metric collection, hence need details of the
-plugins which are configured with custom metrics in Instana. Can you help us get the details?
-```
-
-- **Result 7**
-```
-JVM and OpenTelemetry SDK. The JVM plugin is identified by the label "JVM" and the plugin ID "jvmRuntimePlatform". 
-The OpenTelemetry SDK plugin is identified by the label "OpenTelemetry SDK" and the plugin ID "openTelemetry".
-```
-
-- **Query 8**
-```
-We want to see what kind of systems Instana is tracking. We want to explore the monitoring 
-capabilities of our Instana installation. Please give me the list of monitored entity types.
-```
-
-- **Result 8**
-```
-The list includes various plugins such as businessActivity, azureManagedHSM, kafkaConnectWorker, and many more.
-The total number of available plugins is 395, but only the first 50 are shown in the output.
-```
-
-- **Query 9**
-```
-We're having performance issues with our db2Database. What payload keys are available for the
-db2Database plugin so I can access detailed monitoring data?
-```
-
-- **Result 9**
-```
-The available payload keys for the db2Database plugin are:
-
-tableSpaceNamesSense
-topqueries
-diaglogentries
-dbConfig
-dbmConfig
-lockWaits
-runstats
-dbutilities
-toptotalstmts
-idlogdiskwait
-idhadrstats
-reorgtablesize
-```
-
-- **Query 10**
-```
-We have SLAs for our cryptographic services. What Azure Managed HSM metrics can help 
-monitor service levels using the azureManagedHSM plugin?
-```
-
-- **Result 10**
-```
-The azureManagedHSM plugin provides three metrics that can help monitor service levels for cryptographic services:
-1. Total Service Api Hits: This metric measures the total number of API hits for the service.
-2. Overall Service Api Latency: This metric measures the overall latency of service API requests.
-3. Overall Service Availability: This metric measures the availability of the service.
-```
-- **Query 11 (Website Monitoring)**
-```
-I need to analyze page load performance for my robot-shop website. 
-Can you get the beacon count grouped by page name for the last hour?
-```
-
-- **Result 11**
-```
-Using the manage_website_resources tool with:
-- resource_type: "catalog"
-- operation: "get_tag_catalog" 
-- params: {"beacon_type": "PAGELOAD", "use_case": "GROUPING"}
-
-Then querying with:
-- resource_type: "analyze"
-- operation: "get_beacon_groups"
-- params: {
-    "metrics": [{"metric": "beaconCount", "aggregation": "SUM"}],
-    "group": {"groupByTag": "beacon.page.name"},
-    "tag_filter_expression": {
-      "type": "TAG_FILTER",
-      "name": "beacon.website.name",
-      "operator": "EQUALS",
-      "value": "robot-shop"
-    },
-    "beacon_type": "PAGELOAD"
-  }
-
-Results show beacon counts per page:
-- /home: 1,234 beacons
-- /products: 892 beacons
-- /cart: 456 beacons
-
-- **Query 12 (SLO Management)**
-```
-We need to set up SLO monitoring for our API service. Can you create an SLO configuration 
-that tracks 95% of requests completing within 200ms over a rolling 7-day window?
-```
-
-- **Result 12**
-```
-Using the manage_slo tool with:
-- resource_type: "configuration"
-- operation: "create"
-- params: {
-    "payload": {
-      "name": "API Latency SLO - 95% under 200ms",
-      "entity": {
-        "type": "application",
-        "applicationId": "app-api-service-123",
-        "boundaryScope": "ALL"
-      },
-      "indicator": {
-        "type": "timeBased",
-        "blueprint": "latency",
-        "threshold": 200,
-        "aggregation": "P95"
-      },
-      "target": 0.95,
-      "timeWindow": {
-        "type": "rolling",
-        "duration": 7,
-        "durationUnit": "day"
-      },
-      "tags": ["production", "api", "latency"]
-    }
-  }
-
-Successfully created SLO configuration with ID: slo-abc123
-The SLO will track that 95% of requests complete within 200ms over a rolling 7-day window.
-```
-
-- **Query 13 (SLO Reporting)**
-```
-I need to check how our API SLO performed last week. Can you generate a report 
-for SLO "slo-abc123" from March 10th to March 17th, 2026 in IST timezone?
-```
-
-- **Result 13**
-```
-Using the manage_slo tool with:
-- resource_type: "report"
-- operation: "get"
-- params: {
-    "slo_id": "slo-abc123",
-    "var_from": "10 March 2026, 12:00 AM|IST",
-    "to": "17 March 2026, 11:59 PM|IST"
-  }
-
-SLO Report for "API Latency SLO - 95% under 200ms":
-- Time Range: March 10-17, 2026 (IST)
-- SLI Value: 96.2% (Target: 95%)
-- Status: ✓ Meeting target
-- Error Budget:
-  * Total: 5.0%
-  * Remaining: 3.8%
-  * Spent: 1.2%
-- Burn Rate: 0.24x (healthy)
-- Violations: 2 brief periods of degraded performance
-```
-
-- **Query 14 (SLO Alert Configuration)**
-```
-We need to be alerted when our error budget is burning too fast. Can you create 
-a burn rate alert that triggers when the burn rate exceeds 2x over a 1-hour window?
-```
-
-- **Result 14**
-```
-Using the manage_slo tool with:
-- resource_type: "alert"
-- operation: "create"
-- params: {
-    "payload": {
-      "name": "High Burn Rate Alert - API SLO",
-      "description": "Alert when error budget burns faster than 2x",
-      "sloIds": ["slo-abc123"],
-      "rule": {
-        "alertType": "ERROR_BUDGET",
-        "metric": "BURN_RATE"
-      },
-      "severity": 10,
-      "alertChannelIds": ["slack-channel-ops"],
-      "timeThreshold": {
-        "expiry": 604800000,
-        "timeWindow": 604800000
-      },
-      "customPayloadFields": [
-        {
-          "type": "staticString",
-          "key": "team",
-          "value": "platform-ops"
-        }
-      ],
-      "threshold": {
-        "type": "staticThreshold",
-        "operator": ">=",
-        "value": 2.0
-      },
-      "burnRateTimeWindows": {
-        "longTimeWindow": {
-          "duration": 1,
-          "durationType": "hour"
-        },
-        "shortTimeWindow": {
-          "duration": 5,
-          "durationType": "minute"
-        }
-      }
-    }
-  }
-
-Successfully created alert configuration with ID: alert-def456
-The alert will trigger when burn rate exceeds 2x over a 1-hour window.
-```
-
-- **Query 15 (SLO Correction Windows)**
-```
-We have planned database maintenance on March 15th from 2 AM to 4 AM IST. 
-Can you create a correction window so this downtime doesn't count against our SLO?
-```
-
-- **Result 15**
-```
-Using the manage_slo tool with:
-- resource_type: "correction"
-- operation: "create"
-- params: {
-    "payload": {
-      "name": "Database Maintenance - March 15",
-      "scheduling": {
-        "duration": 2,
-        "durationUnit": "hour",
-        "startTime": "15 March 2026, 2:00 AM|IST"
-      },
-      "sloIds": ["slo-abc123"],
-      "description": "Planned database upgrade and optimization",
-      "tags": ["maintenance", "database"],
-      "active": true
-    }
-  }
-
-Successfully created correction window with ID: correction-xyz789
-The 2-hour maintenance window will be excluded from SLO calculations.
-Scheduled: March 15, 2026, 2:00 AM - 4:00 AM IST
-```
-```
-
-- **Query 12 (Website Configuration)**
-```
-What websites are configured in Instana and what are their geo-location settings?
-```
-
-- **Result 12**
-```
-Using manage_website_resources with resource_type="configuration" and operation="get_all" 
-shows 3 configured websites: robot-shop, e-commerce-prod, and marketing-site.
-
-Then retrieving geo-location config for robot-shop using:
-- resource_type: "advanced_config"
-- operation: "get_geo_config"
-- params: {"website_name": "robot-shop"}
-
-Shows geoDetailRemoval is enabled and custom geo mapping rules are configured for specific IP ranges.
-```
-
+👉 **For usage examples and prompts, see [Example Prompts](docs/TOOLS_AND_EXAMPLES.md)**
 
 ## Docker Deployment
 
@@ -1450,16 +1088,17 @@ The project uses a **two-file dependency management strategy**:
 docker build -t mcp-instana:latest .
 
 # Build with a specific tag
-docker build -t mcp-instana:< image_tag > .
+docker build -t mcp-instana:<image_tag> .
 
 #### **Run Command**
-```bash
 # Run the container (no credentials needed in the container)
 docker run -p 8080:8080 mcp-instana
 
 # Run with custom port
 docker run -p 8081:8080 mcp-instana
 ```
+
+📖 **For comprehensive Docker documentation including multi-architecture builds, Docker Compose setup, security best practices, and production deployment examples, see [DOCKER.md](DOCKER.md).**
 
 ## Troubleshooting
 
@@ -1503,4 +1142,3 @@ docker inspect <container_id> | grep -A 10 Health
       - If that works, your Python environment may not be able to verify the certificate and might not have access to the same certificates as your shell or system. Ensure your Python environment uses system certificates (macOS). You can do this by installing certificates to Python:
       `//Applications/Python\ 3.13/Install\ Certificates.command`
     - If you cannot reach the endpoint with SSL verification, try without it. If that works, check your system's CA certificates and ensure they are up-to-date.
-```

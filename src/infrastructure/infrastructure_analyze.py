@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from fastmcp import Context
+
 try:
     from instana_client.api.infrastructure_analyze_api import InfrastructureAnalyzeApi
 except ImportError as e:
@@ -95,8 +97,8 @@ class InfrastructureAnalyze(BaseInstanaClient):
         intent: Optional[str] = None,
         entity: Optional[str] = None,
         selections: Optional[Union[Dict[str, Any], str]] = None,
-        ctx=None,
-        api_client=None
+        ctx: Optional[Context] = None,
+        api_client: Any = None
     ) -> List[Any]:
         """
         Two-pass infrastructure analysis using machine-facing elicitation.

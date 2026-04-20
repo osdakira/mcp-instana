@@ -9,8 +9,10 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from fastmcp import Context
 from mcp.types import ToolAnnotations
 
+from src.core.timestamp_utils import convert_nested_datetime_param
 from src.core.utils import BaseInstanaClient, register_as_tool
 
 logger = logging.getLogger(__name__)
@@ -68,7 +70,7 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
         resource_type: str,
         operation: str,
         params: Optional[Union[Dict[str, Any], str]] = None,
-        ctx=None
+        ctx: Optional[Context] = None
     ) -> Dict[str, Any]:
         """
         Unified Instana website resource manager for beacon monitoring, catalog, and configuration operations.
@@ -87,6 +89,17 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
             operations: get_beacon_groups, get_beacons
             params: {metrics, group, tag_filter_expression, time_frame, beacon_type, fill_time_series, order, pagination}
 
+            Aggregations: SUM, MEAN, MAX, MIN, P25, P50, P75, P90, P95, P98, P99, P99_9, P99_99, DISTINCT_COUNT, SUM_POSITIVE, PER_SECOND, INCREASE
+            Operators: EQUALS, NOT_EQUAL, CONTAINS, NOT_CONTAIN, STARTS_WITH, ENDS_WITH, NOT_STARTS_WITH, NOT_ENDS_WITH, GREATER_THAN, GREATER_OR_EQUAL_THAN, LESS_THAN, LESS_OR_EQUAL_THAN, NOT_EMPTY, IS_EMPTY, NOT_BLANK, IS_BLANK, REGEX_MATCH
+
+            tag_filter_expression: CRITICAL - Entity field REQUIRED for ALL tag filters. ALWAYS set "entity": "NOT_APPLICABLE" for website beacon tags.
+            time_frame: {"to": <timestamp_or_datetime>, "windowSize": <milliseconds>} - Default: 3600000 (1 hour)
+                to: Unix timestamp (ms) OR datetime string (e.g., "19 March 2026, 2:47 PM|IST")
+
+            Examples:
+                metrics: [{"metric": "beaconCount", "aggregation": "SUM"}, {"metric": "pageLoadTime", "aggregation": "P95"}]
+                tag_filter_expression: {"type": "TAG_FILTER", "name": "beacon.page.name", "operator": "CONTAINS", "entity": "NOT_APPLICABLE", "value": "checkout"}
+
             get_beacon_groups - Use for grouped/aggregated data (e.g., "beacon count per page")
             get_beacons - Use for individual beacon data (e.g., "list all page load beacons")
 
@@ -94,7 +107,7 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
             operations: get_metrics, get_tag_catalog
             params: {beacon_type, use_case}
 
-            get_metrics - Get list of available metric IDs
+            get_metrics - Get website metrics catalog with full metadata (metricId, label, description, formatter, aggregations, beaconTypes)
             get_tag_catalog - Get valid tag names for beacon_type and use_case
                 Valid beacon_type: "PAGELOAD", "PAGECHANGE", "RESOURCELOAD", "CUSTOM", "HTTPREQUEST", "ERROR"
                 Valid use_case: "GROUPING", "FILTERING", "SERVICE_MAPPING", "SMART_ALERTS", etc.
@@ -134,34 +147,13 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
             Dictionary with results from the appropriate tool
 
         Examples:
-            # Get tag catalog first (REQUIRED before analyze)
             resource_type="catalog", operation="get_tag_catalog", params={"beacon_type": "PAGELOAD", "use_case": "GROUPING"}
-
-            # Then use returned tags in analyze
-            resource_type="analyze", operation="get_beacon_groups", params={
-                "metrics": [{"metric": "beaconCount", "aggregation": "SUM"}],
-                "group": {"groupByTag": "beacon.page.name"},
-                "tag_filter_expression": {"type": "TAG_FILTER", "name": "beacon.website.name", "operator": "EQUALS", "entity": "NOT_APPLICABLE", "value": "robot-shop"},
-                "beacon_type": "PAGELOAD"
-            }
-
-            # Get metrics catalog (optional, only if metric errors occur)
+            resource_type="analyze", operation="get_beacon_groups", params={"metrics": [{"metric": "beaconCount", "aggregation": "SUM"}], "group": {"groupByTag": "beacon.page.name"}, "time_frame": {"to": "19 March 2026, 2:47 PM|IST", "windowSize": 3600000}, "beacon_type": "PAGELOAD"}
+            resource_type="analyze", operation="get_beacons", params={"time_frame": {"to": 1234567890000, "windowSize": 3600000}, "beacon_type": "PAGELOAD", "pagination": {"retrievalSize": 50}}
             resource_type="catalog", operation="get_metrics"
-
-            # List all websites
             resource_type="configuration", operation="get_all"
-
-            # Get website by name
             resource_type="configuration", operation="get", params={"website_name": "robot-shop"}
-
-            # Get geo-location configuration
             resource_type="advanced_config", operation="get_geo_config", params={"website_name": "robot-shop"}
-
-            # Get IP masking configuration
-            resource_type="advanced_config", operation="get_ip_masking", params={"website_id": "abc123"}
-
-            # Get geo mapping rules
-            resource_type="advanced_config", operation="get_geo_rules", params={"website_name": "robot-shop"}
         """
 
         try:
@@ -240,6 +232,27 @@ class WebsiteSmartRouterMCPTool(BaseInstanaClient):
         fill_time_series = params.get(PARAM_FILL_TIME_SERIES, True)
         pagination = params.get(PARAM_PAGINATION)
         order = params.get(PARAM_ORDER)
+
+        # Convert datetime string to timestamp for time_frame.to if provided
+        conversion_result = convert_nested_datetime_param(
+            params,
+            PARAM_TIME_FRAME,
+            "to",
+            default_timezone="UTC"
+        )
+
+        if "error" in conversion_result:
+            return {
+                "error": conversion_result["error"],
+                "resource_type": "analyze",
+                "operation": operation,
+                "original_params": params,
+                "hint": "Provide time_frame.to as Unix timestamp (ms) or datetime string with timezone (e.g., '10 March 2026, 2:00 PM|IST')"
+            }
+
+        # Update time_frame with converted value if conversion occurred
+        if conversion_result["converted"]:
+            time_frame = conversion_result["params"][PARAM_TIME_FRAME]
 
         # Route to specific operation
         if operation == "get_beacon_groups":

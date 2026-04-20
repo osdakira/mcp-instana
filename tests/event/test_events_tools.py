@@ -3,6 +3,7 @@ Unit tests for the AgentMonitoringEventsMCPTools class
 """
 
 import asyncio
+import importlib
 import logging
 import os
 import sys
@@ -78,10 +79,14 @@ sys.modules['instana_client.configuration'].Configuration = mock_configuration
 sys.modules['instana_client.api_client'].ApiClient = mock_api_client
 sys.modules['instana_client.api.events_api'].EventsApi = mock_events_api
 
-# Patch the with_header_auth decorator
-with patch('src.core.utils.with_header_auth', mock_with_header_auth):
-    # Import the class to test
-    from src.event.events_tools import AgentMonitoringEventsMCPTools
+def create_agent_monitoring_events_client(read_token: str, base_url: str):
+    with patch('src.core.utils.with_header_auth', mock_with_header_auth):
+        module = importlib.import_module('src.event.events_tools')
+        module = importlib.reload(module)
+        return module.AgentMonitoringEventsMCPTools(
+            read_token=read_token,
+            base_url=base_url,
+        )
 
 class TestAgentMonitoringEventsMCPTools(unittest.TestCase):
     """Test the AgentMonitoringEventsMCPTools class"""
@@ -101,7 +106,10 @@ class TestAgentMonitoringEventsMCPTools(unittest.TestCase):
         # Create the client
         self.read_token = "test_token"
         self.base_url = "https://test.instana.io"
-        self.client = AgentMonitoringEventsMCPTools(read_token=self.read_token, base_url=self.base_url)
+        self.client = create_agent_monitoring_events_client(
+            read_token=self.read_token,
+            base_url=self.base_url,
+        )
 
         # Set up the client's API attribute
         self.client.events_api = self.events_api
@@ -656,69 +664,6 @@ class TestAgentMonitoringEventsMCPTools(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("Failed to get agent monitoring events", result["error"])
 
-    # Tests for get_changes method
-    @patch('src.event.events_tools.datetime')
-    def test_get_changes_method_success(self, mock_datetime):
-        """Test get_changes method with successful response"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
-
-        # Set up the mock response for get_events_without_preload_content
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='''[
-            {
-                "eventId": "change1",
-                "eventType": "change",
-                "changeType": "deployment",
-                "start": 900000
-            },
-            {
-                "eventId": "change2",
-                "eventType": "change",
-                "changeType": "configuration",
-                "start": 950000
-            }
-        ]''')
-
-        # Mock the API client method used in get_changes
-        self.events_api.get_events_without_preload_content.return_value = mock_response
-
-        # Call the get_changes method
-        result = asyncio.run(self.client.get_changes())
-
-        # Assertions
-        self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 2)
-        # New response format uses events_returned and total_events instead of events_count
-        self.assertEqual(result["events_returned"], 2)
-        self.assertEqual(result["total_events"], 2)
-        self.assertEqual(result["events"][0]["eventId"], "change1")
-        self.assertEqual(result["events"][1]["eventId"], "change2")
-
-        # Verify the API call was made with the correct parameters
-        # When no time params provided, _build_time_params uses var_from/to (default 24h window)
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # Corrected to match actual call
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["change"]
-        )
-
-    def test_get_changes_method_error(self):
-        """Test get_changes method with API error"""
-        # Set up the mock to raise an exception
-        self.events_api.get_events.side_effect = Exception("API error")
-
-        # Call the get_changes method directly and store result for assertions
-        result = asyncio.run(self.client.get_changes())
-        self.assertIn("error", result)
-        self.assertIn("Failed to get change events", result["error"])
-
 # Tests for _process_result method
     def test_process_result_with_list_items(self):
         """Test _process_result method with list items"""
@@ -823,94 +768,6 @@ class TestAgentMonitoringEventsMCPTools(unittest.TestCase):
         # Check that the event type was set to "Unknown"
         self.assertIn("event_types", result)
         self.assertIn("Unknown", result["event_types"])
-
-    # Additional tests for error handling and edge cases
-    @patch('src.event.events_tools.datetime')
-    def test_get_issues_with_exception_in_processing(self, mock_datetime):
-        """Test get_issues method with exception during event processing"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
-
-        # Set up the mock response to simulate an exception during JSON parsing
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='invalid_json')  # Triggers JSONDecodeError
-
-        # Mock the API client method used in get_issues
-        self.events_api.get_events_without_preload_content.return_value = mock_response
-
-        # Call the get_issues method
-        result = asyncio.run(self.client.get_issues())
-
-        # Check that the method handled the exception and returned an error
-        self.assertIn("error", result)
-        self.assertIn("Failed to get issue events", result["error"])
-        self.assertIn("Expecting value", result["error"])  # Adjusted to match actual JSONDecodeError message
-
-        # Verify the API call was made with the correct parameters
-        # When no time params provided, _build_time_params uses var_from/to (default 24h window)
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # 24-hour default, consistent with previous tests
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["issue"]
-        )
-
-    @patch('src.event.events_tools.datetime')
-    def test_get_incidents_with_exception_in_processing(self, mock_datetime):
-        """Test get_incidents method with exception during event processing"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
-
-        # Set up the mock response to simulate an exception during JSON parsing
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='invalid_json')  # Triggers JSONDecodeError
-
-        # Mock the API client method used in get_incidents
-        self.events_api.get_events_without_preload_content.return_value = mock_response
-
-        # Call the get_incidents method
-        result = asyncio.run(self.client.get_incidents())
-
-        # Check that the method handled the exception and returned an error
-        self.assertIn("error", result)
-        self.assertIn("Failed to get incident events", result["error"])
-        self.assertIn("Expecting value", result["error"])  # Adjusted to match actual JSONDecodeError message
-
-        # Verify the API call was made with the correct parameters
-        # When no time params provided, _build_time_params uses var_from/to (default 24h window)
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # 24-hour default, consistent with previous tests
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["incident"]
-        )
-
-    # Test for import error handling
-    def test_import_error_handling(self):
-        """Test import error handling in the module"""
-        # Create a client instance with test values
-        client = AgentMonitoringEventsMCPTools(read_token="test_token", base_url="https://test.instana.io")
-
-        # Simulate an import error by setting the events_api attribute to None
-        client.events_api = None
-
-        # Call a method that would use the events_api
-        result = asyncio.run(client.get_issues())
-
-        # Check that the result contains an error message
-        self.assertIn("error", result)
-        self.assertIn("Failed to get issue events", result["error"])  # Corrected to match implementation
-        self.assertIn("'NoneType' object has no attribute", result["error"])
 
     # Tests for _process_time_range method
     def test_process_time_range_with_none_values(self):
@@ -1131,113 +988,6 @@ class TestAgentMonitoringEventsMCPTools(unittest.TestCase):
         self.assertEqual(result["id"], "obj1")
         self.assertEqual(result["name"], "Object 1")
 
-    # Additional tests for edge cases
-    @patch('src.event.events_tools.datetime')
-    def test_get_issues_with_severity_filtering(self, mock_datetime):
-        """Test get_issues method with severity filtering"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
-
-        # Set up the mock response for get_events_without_preload_content
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='''[
-            {
-                "eventId": "issue1",
-                "eventType": "issue",
-                "severity": 10
-            },
-            {
-                "eventId": "issue2",
-                "eventType": "issue",
-                "severity": 5
-            },
-            {
-                "eventId": "issue3",
-                "eventType": "issue",
-                "severity": 1
-            }
-        ]''')
-
-        # Mock the API client method used in get_issues
-        self.events_api.get_events_without_preload_content.return_value = mock_response
-
-        # Call the get_issues method with a query for severity filtering
-        result = asyncio.run(self.client.get_issues(query="severity:5"))
-
-        # Check that all events were included
-        self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 3)
-        # New response format uses events_returned and total_events instead of events_count
-        self.assertEqual(result["events_returned"], 3)
-        self.assertEqual(result["total_events"], 3)
-
-        # Check that the events are returned as provided by the API
-        events = result["events"]
-        self.assertEqual(events[0]["eventId"], "issue1")
-        self.assertEqual(events[1]["eventId"], "issue2")
-        self.assertEqual(events[2]["eventId"], "issue3")
-
-        # Verify the API call was made with the correct parameters
-        # When no time params provided, _build_time_params uses var_from/to (default 24h window)
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # Corrected to match actual call (24 hours)
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["issue"]
-        )
-
-    @patch('src.event.events_tools.datetime')
-    def test_get_changes_with_missing_fields(self, mock_datetime):
-        """Test get_changes method with missing fields"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
-
-        # Set up the mock response for get_events_without_preload_content
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='''[
-            {
-                "eventId": "change1",
-                "eventType": "change"
-            }
-        ]''')
-
-        # Mock the API client method used in get_changes
-        self.events_api.get_events_without_preload_content.return_value = mock_response
-
-        # Call the get_changes method
-        result = asyncio.run(self.client.get_changes())
-
-        # Check that the event was processed correctly
-        self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 1)
-        # New response format uses events_returned and total_events instead of events_count
-        self.assertEqual(result["events_returned"], 1)
-        self.assertEqual(result["total_events"], 1)
-
-        # Check that the event has the expected fields
-        event = result["events"][0]
-        self.assertEqual(event["eventId"], "change1")
-        self.assertNotIn("changeType", event)  # Verify missing field
-
-        # Verify the API call was made with the correct parameters
-        # When no time params provided, _build_time_params uses var_from/to (default 24h window)
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # Corrected to match actual call (24 hours)
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["change"]
-        )
-
     def test_process_time_range_with_hour_format(self):
         """Test _process_time_range method with hour format"""
         # Set up the mock datetime
@@ -1347,113 +1097,414 @@ class TestAgentMonitoringEventsMCPTools(unittest.TestCase):
             self.assertEqual(to_time, to_time_value)
 
     @patch('src.event.events_tools.datetime')
-    def test_get_issues_with_size_parameter(self, mock_datetime):
-        """Test get_issues with size parameter"""
-        # Set up the mock datetime
+    def test_get_events_filters_entity_type_from_entity_type_field(self, mock_datetime):
+        """Test get_events with entity_type filter using top-level entityType field."""
+        # Set up mock datetime for time range
         mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
+        mock_now.timestamp = MagicMock(return_value=1000)
         mock_datetime.now = MagicMock(return_value=mock_now)
         mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
 
-        # Set up the mock response for get_events_without_preload_content
+        # Prepare API response with entityType at root level
         mock_response = MagicMock()
         mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='[]')  # Empty JSON array
+        mock_response.data.decode = MagicMock(return_value='''[
+            {
+                "eventId": "event1",
+                "eventType": "incident",
+                "state": "open",
+                "entityType": "JVM",
+                "start": 900000
+            },
+            {
+                "eventId": "event2",
+                "eventType": "incident",
+                "state": "open",
+                "entityType": "host",
+                "start": 900000
+            }
+        ]''')
 
-        # Mock the API client method used in get_issues
         self.events_api.get_events_without_preload_content.return_value = mock_response
 
-        # Call the method with size parameter
-        size = 200
-        result = asyncio.run(self.client.get_issues(size=size))
+        result = asyncio.run(self.client.get_events(entity_type="jvm", state="open"))
 
-        # Check that the API was called
-        self.events_api.get_events_without_preload_content.assert_called_once()
-
-        # Check the result for correctness
-        # New response format uses events_returned and total_events instead of events_count
         self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 0)
-        self.assertEqual(result["events_returned"], 0)
-        self.assertEqual(result["total_events"], 0)
+        self.assertEqual(result["total_events"], 1)
+        self.assertEqual(result["events_returned"], 1)
 
-    @patch('src.event.events_tools.datetime')
-    def test_get_incidents_with_size_parameter(self, mock_datetime):
-        """Test get_incidents with size parameter"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
+    def test_calculate_duration_with_open_state(self):
+        """Test _calculate_duration with open state returns 'ongoing'."""
+        result = self.client._calculate_duration(1000000, 2000000, "open")
+        self.assertEqual(result, "ongoing")
 
-        # Set up the mock response for get_events_without_preload_content
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='[]')  # Empty JSON array
+    def test_calculate_duration_seconds(self):
+        """Test _calculate_duration for duration less than 60 seconds."""
+        start_ms = 1000000
+        end_ms = 1045000  # 45 seconds later
+        result = self.client._calculate_duration(start_ms, end_ms, "closed")
+        self.assertEqual(result, "45 seconds")
 
-        # Mock the API client method used in get_incidents
-        self.events_api.get_events_without_preload_content.return_value = mock_response
+    def test_calculate_duration_single_minute(self):
+        """Test _calculate_duration for exactly 1 minute."""
+        start_ms = 1000000
+        end_ms = 1060000  # 1 minute later
+        result = self.client._calculate_duration(start_ms, end_ms, "closed")
+        self.assertEqual(result, "1 minute")
 
-        # Call the method with size parameter
-        size = 200
-        result = asyncio.run(self.client.get_incidents(size=size))
+    def test_calculate_duration_hours_with_minutes(self):
+        """Test _calculate_duration for hours with minutes."""
+        start_ms = 1000000
+        end_ms = 1000000 + (2 * 3600 * 1000) + (30 * 60 * 1000)  # 2 hours 30 minutes
+        result = self.client._calculate_duration(start_ms, end_ms, "closed")
+        self.assertEqual(result, "2 hours 30 minutes")
 
-        # Check that the API was called
-        self.events_api.get_events_without_preload_content.assert_called_once()
+    def test_calculate_duration_single_hour(self):
+        """Test _calculate_duration for exactly 1 hour."""
+        start_ms = 1000000
+        end_ms = 1000000 + (3600 * 1000)  # 1 hour
+        result = self.client._calculate_duration(start_ms, end_ms, "closed")
+        self.assertEqual(result, "1 hour")
 
-        # Check the result for correctness
-        # New response format uses events_returned and total_events instead of events_count
-        self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 0)
-        self.assertEqual(result["events_returned"], 0)
-        self.assertEqual(result["total_events"], 0)
+    def test_calculate_duration_days_with_hours(self):
+        """Test _calculate_duration for days with hours."""
+        start_ms = 1000000
+        end_ms = 1000000 + (2 * 86400 * 1000) + (5 * 3600 * 1000)  # 2 days 5 hours
+        result = self.client._calculate_duration(start_ms, end_ms, "closed")
+        self.assertEqual(result, "2 days 5 hours")
 
-        # Verify the API call parameters - no window_size since size param is not passed to API
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # 24-hour default, consistent with previous tests
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["incident"]
-        )
+    def test_calculate_duration_single_day(self):
+        """Test _calculate_duration for exactly 1 day."""
+        start_ms = 1000000
+        end_ms = 1000000 + (86400 * 1000)  # 1 day
+        result = self.client._calculate_duration(start_ms, end_ms, "closed")
+        self.assertEqual(result, "1 day")
 
-    @patch('src.event.events_tools.datetime')
-    def test_get_changes_with_size_parameter(self, mock_datetime):
-        """Test get_changes with size parameter"""
-        # Set up the mock datetime
-        mock_now = MagicMock()
-        mock_now.timestamp = MagicMock(return_value=1000)  # 1000 seconds since epoch
-        mock_datetime.now = MagicMock(return_value=mock_now)
-        mock_datetime.fromtimestamp = MagicMock(side_effect=lambda ts, *args: datetime.fromtimestamp(ts))
+    def test_calculate_age_just_now(self):
+        """Test _calculate_age for very recent events."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - 30000  # 30 seconds ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "just now")
 
-        # Set up the mock response for get_events_without_preload_content
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.data.decode = MagicMock(return_value='[]')  # Empty JSON array
+    def test_calculate_age_single_minute(self):
+        """Test _calculate_age for 1 minute ago."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - (60 * 1000)  # 1 minute ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "1 minute ago")
 
-        # Mock the API client method used in get_changes
-        self.events_api.get_events_without_preload_content.return_value = mock_response
+    def test_calculate_age_multiple_minutes(self):
+        """Test _calculate_age for multiple minutes ago."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - (45 * 60 * 1000)  # 45 minutes ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "45 minutes ago")
 
-        # Call the method with size parameter
-        size = 200
-        result = asyncio.run(self.client.get_changes(size=size))
+    def test_calculate_age_single_hour(self):
+        """Test _calculate_age for 1 hour ago."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - (3600 * 1000)  # 1 hour ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "1 hour ago")
 
-        # Check that the API was called
-        self.events_api.get_events_without_preload_content.assert_called_once()
+    def test_calculate_age_multiple_hours(self):
+        """Test _calculate_age for multiple hours ago."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - (5 * 3600 * 1000)  # 5 hours ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "5 hours ago")
 
-        # Check the result for correctness
-        # New response format uses events_returned and total_events instead of events_count
-        self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 0)
-        self.assertEqual(result["events_returned"], 0)
-        self.assertEqual(result["total_events"], 0)
+    def test_calculate_age_single_day(self):
+        """Test _calculate_age for 1 day ago."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - (86400 * 1000)  # 1 day ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "1 day ago")
 
-        # Verify the API call parameters - no window_size since size param is not passed to API
-        self.events_api.get_events_without_preload_content.assert_called_once_with(
-            var_from=-85400000,  # 24-hour default, consistent with previous tests
-            to=1000000,          # 1000 seconds * 1000 (milliseconds)
-            filter_event_updates=None,
-            exclude_triggered_before=None,
-            event_type_filters=["change"]
-        )
+    def test_calculate_age_multiple_days(self):
+        """Test _calculate_age for multiple days ago."""
+        from datetime import datetime
+        current_time_ms = int(datetime.now().timestamp() * 1000)
+        start_ms = current_time_ms - (7 * 86400 * 1000)  # 7 days ago
+        result = self.client._calculate_age(start_ms)
+        self.assertEqual(result, "7 days ago")
+
+    def test_simplify_probable_cause_not_found(self):
+        """Test _simplify_probable_cause when probable cause is not found."""
+        probable_cause = {"found": False}
+        result = self.client._simplify_probable_cause(probable_cause)
+        self.assertIsNone(result)
+
+    def test_simplify_probable_cause_no_root_causes(self):
+        """Test _simplify_probable_cause when no root causes are present."""
+        probable_cause = {"found": True, "currentRootCause": []}
+        result = self.client._simplify_probable_cause(probable_cause)
+        self.assertIsNone(result)
+
+    def test_simplify_probable_cause_with_explainability(self):
+        """Test _simplify_probable_cause with explainability text."""
+        probable_cause = {
+            "found": True,
+            "currentRootCause": [{
+                "probFailure": 0.95,
+                "entityLabel": "my-service",
+                "entityType": "service",
+                "explainability": [{"text": "High error rate detected"}]
+            }]
+        }
+        result = self.client._simplify_probable_cause(probable_cause)
+        self.assertIsNotNone(result)
+        self.assertTrue(result["found"])
+        self.assertEqual(result["confidence"], 0.95)
+        self.assertEqual(result["rootCauseEntity"], "service: my-service")
+        self.assertEqual(result["summary"], "High error rate detected")
+
+    def test_simplify_probable_cause_without_entity_type(self):
+        """Test _simplify_probable_cause without entity type."""
+        probable_cause = {
+            "found": True,
+            "currentRootCause": [{
+                "probFailure": 0.85,
+                "entityLabel": "my-entity",
+                "entityType": "",
+                "explainability": []
+            }]
+        }
+        result = self.client._simplify_probable_cause(probable_cause)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["rootCauseEntity"], "my-entity")
+        self.assertEqual(result["summary"], "Root cause identified")
+
+    def test_optimize_event_data_with_detail_and_fix_suggestion(self):
+        """Test _optimize_event_data includes detail and fixSuggestion when present."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "High error rate",
+            "start": 1000000,
+            "end": 2000000,
+            "detail": "Error rate exceeded threshold",
+            "fixSuggestion": "Check application logs",
+            "entityLabel": "my-service",
+            "entityType": "service"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("detail", result)
+        self.assertIn("fixSuggestion", result)
+        self.assertEqual(result["detail"], "Error rate exceeded threshold")
+        self.assertEqual(result["fixSuggestion"], "Check application logs")
+
+    def test_optimize_event_data_with_service_id(self):
+        """Test _optimize_event_data includes serviceId when present."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "High latency",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-service",
+            "entityType": "service",
+            "serviceId": "service-456"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("entity", result)
+        self.assertIn("serviceId", result["entity"])
+        self.assertEqual(result["entity"]["serviceId"], "service-456")
+
+    def test_optimize_event_data_with_application_id(self):
+        """Test _optimize_event_data includes applicationId when present."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "High latency",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-app",
+            "entityType": "application",
+            "applicationId": "app-789"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("entity", result)
+        self.assertIn("applicationId", result["entity"])
+        self.assertEqual(result["entity"]["applicationId"], "app-789")
+
+    def test_optimize_event_data_with_endpoint_id(self):
+        """Test _optimize_event_data includes endpointId when present."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "Slow endpoint",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-endpoint",
+            "entityType": "endpoint",
+            "endpointId": "endpoint-101"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("entity", result)
+        self.assertIn("endpointId", result["entity"])
+        self.assertEqual(result["entity"]["endpointId"], "endpoint-101")
+
+    def test_optimize_event_data_with_mobile_app_id(self):
+        """Test _optimize_event_data includes mobileAppId when present."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "App crash",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-mobile-app",
+            "entityType": "mobileApp",
+            "mobileAppId": "mobile-202"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("entity", result)
+        self.assertIn("mobileAppId", result["entity"])
+        self.assertEqual(result["entity"]["mobileAppId"], "mobile-202")
+
+    def test_optimize_event_data_with_metrics(self):
+        """Test _optimize_event_data includes affected metrics."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "High error rate",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-service",
+            "entityType": "service",
+            "metrics": [
+                {"metricName": "errors"},
+                {"metricName": "latency"}
+            ]
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("affectedMetrics", result)
+        self.assertEqual(result["affectedMetrics"], ["errors", "latency"])
+
+    def test_optimize_event_data_with_recent_events(self):
+        """Test _optimize_event_data includes related events count."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "High error rate",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-service",
+            "entityType": "service",
+            "recentEvents": ["event1", "event2", "event3"]
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("relatedEventsCount", result)
+        self.assertEqual(result["relatedEventsCount"], 3)
+
+    def test_optimize_event_data_incident_with_probable_cause(self):
+        """Test _optimize_event_data includes probable cause for incidents."""
+        event = {
+            "eventId": "test-123",
+            "type": "incident",
+            "state": "closed",
+            "problem": "Service down",
+            "start": 1000000,
+            "end": 2000000,
+            "entityLabel": "my-service",
+            "entityType": "service",
+            "probableCause": {
+                "found": True,
+                "currentRootCause": [{
+                    "probFailure": 0.9,
+                    "entityLabel": "database",
+                    "entityType": "database",
+                    "explainability": [{"text": "Connection timeout"}]
+                }]
+            }
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("probableCause", result)
+        self.assertTrue(result["probableCause"]["found"])
+
+    def test_optimize_event_data_change_event(self):
+        """Test _optimize_event_data for change events."""
+        event = {
+            "eventId": "test-123",
+            "type": "change",
+            "state": "closed",
+            "problem": "Deployment",
+            "start": 1000000,
+            "end": 1000000,
+            "entityLabel": "my-service",
+            "entityType": "service",
+            "detail": "Version 2.0 deployed"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("timestamp", result)
+        self.assertNotIn("start", result)
+        self.assertEqual(result["timestamp"], 1000000)
+        self.assertIn("detail", result)
+
+    def test_optimize_event_data_change_with_null_label(self):
+        """Test _optimize_event_data for change events with null label."""
+        event = {
+            "eventId": "test-123",
+            "type": "change",
+            "state": "closed",
+            "problem": "Config change",
+            "start": 1000000,
+            "end": 1000000,
+            "entityLabel": "null",
+            "entityType": "service"
+        }
+        result = self.client._optimize_event_data(event)
+        self.assertIn("entity", result)
+        self.assertEqual(result["entity"]["label"], "Unknown service")
+
+    @mock_with_header_auth
+    def test_get_event_with_object_without_to_dict(self):
+        """Test get_event with an object that doesn't have to_dict method."""
+
+        class CustomObject:
+            def __init__(self):
+                self.eventId = "test-123"
+                self.type = "incident"
+                self.problem = "Test problem"
+                self.start = 1000000
+                self.end = 2000000
+                self.state = "closed"
+                self.entityLabel = "test-entity"
+                self.entityType = "service"
+
+        self.events_api.get_event.return_value = CustomObject()
+
+        result = asyncio.run(self.client.get_event(event_id="test-123"))
+
+        self.assertIn("eventId", result)
+        self.assertEqual(result["eventId"], "test-123")
+
+    def test_build_time_params_with_invalid_time_range(self):
+        """Test _build_time_params with invalid time_range falls back to defaults."""
+        # Mock _convert_time_range_to_window_size to return None
+        with patch.object(self.client, '_convert_time_range_to_window_size', return_value=None):
+            result = self.client._build_time_params(time_range="invalid time range")
+
+            self.assertIn("api_params", result)
+            self.assertIn("var_from", result["api_params"])
+            self.assertIn("to", result["api_params"])
+            self.assertIn("from_time", result)
+            self.assertIn("to_time", result)
+
+if __name__ == '__main__':
+    unittest.main()
 

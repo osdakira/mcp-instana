@@ -727,8 +727,8 @@ class WebsiteAnalyzeMCPTools(BaseInstanaClient):
         use_case: str = "GROUPING"
     ) -> Optional[Dict[str, Any]]:
         """
-        Validate that tag names follow the beacon.* pattern.
-        Returns elicitation if tags are invalid or missing.
+        Validate that tag names follow the beacon.* pattern AND that entity field is present in TAG_FILTER.
+        Returns elicitation if tags are invalid, missing, or entity field is missing.
 
         Args:
             tag_filter_expression: Tag filter expression to validate
@@ -740,9 +740,10 @@ class WebsiteAnalyzeMCPTools(BaseInstanaClient):
             Elicitation dict if validation fails, None if valid
         """
         invalid_tags = []
+        missing_entity_tags = []
 
-        # Helper function to extract tag names from filter expression
-        def extract_tag_names(expr):
+        # Helper function to extract tag names and check entity field
+        def extract_and_validate_tags(expr):
             tags = []
             if not expr:
                 return tags
@@ -753,17 +754,20 @@ class WebsiteAnalyzeMCPTools(BaseInstanaClient):
                     tag_name = expr.get("name")
                     if tag_name:
                         tags.append(tag_name)
+                        # CRITICAL: Check if entity field is present
+                        if "entity" not in expr or expr.get("entity") is None:
+                            missing_entity_tags.append(tag_name)
 
                 # EXPRESSION with elements
                 elif expr.get("type") == "EXPRESSION":
                     elements = expr.get("elements", [])
                     for element in elements:
-                        tags.extend(extract_tag_names(element))
+                        tags.extend(extract_and_validate_tags(element))
 
             return tags
 
-        # Extract tag names from tag_filter_expression
-        filter_tags = extract_tag_names(tag_filter_expression)
+        # Extract tag names from tag_filter_expression and validate entity field
+        filter_tags = extract_and_validate_tags(tag_filter_expression)
 
         # Extract tag name from group
         group_tag = None
@@ -774,14 +778,33 @@ class WebsiteAnalyzeMCPTools(BaseInstanaClient):
         # Combine all tags
         all_tags = filter_tags + ([group_tag] if group_tag else [])
 
-        # Validate each tag
+        # Validate each tag name format
         for tag in all_tags:
             if tag:
                 # Check if tag follows beacon.* pattern
                 if not tag.startswith("beacon."):
                     invalid_tags.append(tag)
 
-        # If invalid tags found, return elicitation
+        # PRIORITY 1: Check for missing entity field (most common error)
+        if missing_entity_tags:
+            logger.warning(f"TAG_FILTER missing required 'entity' field for tags: {missing_entity_tags}")
+            return {
+                "elicitation_needed": True,
+                "reason": f"TAG_FILTER is missing required 'entity' field for tags: {', '.join(missing_entity_tags)}",
+                "missing_entity_tags": missing_entity_tags,
+                "message": (
+                    f"CRITICAL ERROR: Your TAG_FILTER for tags {missing_entity_tags} is missing the required 'entity' field.\n\n"
+                    f"EVERY TAG_FILTER MUST include an 'entity' field with one of these values:\n"
+                    f"- 'NOT_APPLICABLE' (for website/browser/OS/user/geo tags)\n"
+                    f"- 'DESTINATION' (for page/endpoint tags)\n"
+                    f"- 'SOURCE' (for backend/service tags)\n\n"
+                    f"Example CORRECT format:\n"
+                    f'{{"type": "TAG_FILTER", "name": "beacon.website.name", "operator": "EQUALS", "entity": "NOT_APPLICABLE", "value": "Robot Shop"}}\n\n'
+                    f"NEVER omit the 'entity' field or set it to null. It is REQUIRED for all TAG_FILTER expressions."
+                )
+            }
+
+        # PRIORITY 2: Check for invalid tag names
         if invalid_tags:
             logger.warning(f"Invalid tag names detected: {invalid_tags}")
             return {
@@ -799,7 +822,7 @@ class WebsiteAnalyzeMCPTools(BaseInstanaClient):
                 "message": f"Please call get_tag_catalog first to get valid tag names for beacon_type='{beacon_type}' and use_case='{use_case}'. Tag names must start with 'beacon.'"
             }
 
-        # If no tags provided at all (and group/filter are being used), suggest catalog
+        # PRIORITY 3: Check if no tags provided at all
         if (tag_filter_expression or group) and not all_tags:
             logger.debug("Tag filter or group provided but no tag names extracted")
             return {

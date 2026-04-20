@@ -9,25 +9,25 @@ class WebsiteCatalogPrompts:
     @auto_register_prompt
     @staticmethod
     def get_website_catalog_metrics() -> str:
-        """Retrieve all available metric definitions for website monitoring to discover what metrics are available"""
+        """Retrieve metric definitions with metadata: metricId, label, description, unit/formatter, aggregations, beaconTypes, and more"""
         return """
-        Get website catalog metrics to discover available website monitoring metrics.
+        Get website catalog metrics with full metadata including descriptions, supported aggregations, and beacon types.
         """
 
     @auto_register_prompt
     @staticmethod
     def get_website_catalog_tags() -> str:
-        """Retrieve all available tags for website monitoring to discover what tags are available for filtering beacons"""
+        """Retrieve all available website monitoring tags across all beacon types"""
         return """
-        Get website catalog tags to discover available website monitoring tags for filtering.
+        Get complete list of all website monitoring tags available.
         """
 
     @auto_register_prompt
     @staticmethod
     def get_website_tag_catalog() -> str:
-        """Retrieve all available tags for website monitoring to discover what tags are available for filtering beacons"""
+        """Retrieve website monitoring tag names filtered by beacon type and use case"""
         return """
-        Get website tag catalog to discover available website monitoring tags for filtering.
+        Get website tag names for specific beacon type (PAGELOAD, ERROR, etc.) and use case (GROUPING, FILTERING, etc.).
         """
 
     @classmethod

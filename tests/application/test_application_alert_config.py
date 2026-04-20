@@ -8,7 +8,7 @@ import os
 import sys
 import unittest
 from functools import wraps
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 
 # Create a null handler that will discard all log messages
@@ -504,6 +504,638 @@ class TestApplicationAlertMCPTools(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("Failed to update application alert config", result["error"])
 
+    def test_execute_operation_find_active(self):
+        """Test execute_operation with find_active operation"""
+
+        self.client._find_active_configs = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find_active",
+            application_id="app1",
+            alert_ids=["alert1", "alert2"]
+        ))
+
+        self.client._find_active_configs.assert_called_once_with("app1", ["alert1", "alert2"], None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_invalid_operation(self):
+        """Test execute_operation with invalid operation"""
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="invalid_op"
+        ))
+
+        self.assertIn("error", result)
+        self.assertEqual(result["error"], "Operation 'invalid_op' not supported")
+
+    def test_execute_operation_find_versions(self):
+        """Test execute_operation with find_versions operation"""
+
+        self.client._find_config_versions = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find_versions",
+            id="alert1"
+        ))
+
+        self.client._find_config_versions.assert_called_once_with("alert1", None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_find(self):
+        """Test execute_operation with find operation"""
+
+        self.client._find_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="find",
+            id="alert1",
+            valid_on=1234567890
+        ))
+
+        self.client._find_config.assert_called_once_with("alert1", 1234567890, None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_create(self):
+        """Test execute_operation with create operation"""
+
+        self.client._create_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="create",
+            payload={"name": "test"}
+        ))
+
+        self.client._create_config.assert_called_once_with({"name": "test"}, None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_update(self):
+        """Test execute_operation with update operation"""
+
+        self.client._update_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="update",
+            id="alert1",
+            payload={"name": "Updated Alert"}
+        ))
+
+        self.client._update_config.assert_called_once_with("alert1", {"name": "Updated Alert"}, None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_delete(self):
+        """Test execute_operation with delete operation"""
+
+        self.client._delete_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="delete",
+            id="alert1"
+        ))
+
+        self.client._delete_config.assert_called_once_with("alert1", None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_enable(self):
+        """Test execute_operation with enable operation"""
+
+        self.client._enable_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="enable",
+            id="alert1"
+        ))
+
+        self.client._enable_config.assert_called_once_with("alert1", None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_disable(self):
+        """Test execute_operation with disable operation"""
+
+        self.client._disable_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="disable",
+            id="alert1"
+        ))
+
+        self.client._disable_config.assert_called_once_with("alert1", None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_restore(self):
+        """Test execute_operation with restore operation"""
+
+        self.client._restore_config = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="restore",
+            id="alert1",
+            created=1234567890
+        ))
+
+        self.client._restore_config.assert_called_once_with("alert1", 1234567890, None)
+        self.assertEqual(result, {"success": True})
+
+    def test_execute_operation_update_baseline(self):
+        """Test execute_operation with update baseline operation"""
+
+        self.client._update_baseline = AsyncMock(return_value={"success": True})
+
+        result = asyncio.run(self.client.execute_alert_config_operation(
+            operation="update_baseline",
+            id="alert1"
+        ))
+
+        self.client._update_baseline.assert_called_once_with("alert1", None)
+        self.assertEqual(result, {"success": True})
+
+    def test_find_active_configs_no_application_id(self):
+        result = asyncio.run(
+            self.client._find_active_configs(
+                application_id=None,
+                alert_ids=["alert1"]
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "application_id is required for find_active operation"}
+        )
+
+    def test_find_active_configs_success(self):
+        self.client.find_active_application_alert_configs = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._find_active_configs(
+                application_id="app1",
+                alert_ids=["alert1"]
+            )
+        )
+
+        self.client.find_active_application_alert_configs.assert_called_once_with(
+            application_id="app1",
+            alert_ids=["alert1"],
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_find_config_versions_no_id(self):
+        result = asyncio.run(
+            self.client._find_config_versions(
+                id=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for find_versions operation"}
+        )
+
+    def test_find_config_versions_success(self):
+        self.client.find_application_alert_config_versions = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._find_config_versions(
+                id="alert1"
+            )
+        )
+
+        self.client.find_application_alert_config_versions.assert_called_once_with(
+            id="alert1",
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_create_config_no_payload(self):
+        result = asyncio.run(
+            self.client._create_config(
+                payload=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "payload is required for create operation"}
+        )
+
+    def test_create_config_success(self):
+        self.client.create_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._create_config(
+                payload={"name": "Test Alert"}
+            )
+        )
+
+        self.client.create_application_alert_config.assert_called_once_with(
+            payload={"name": "Test Alert"},
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_find_config_no_id(self):
+        """Test _find_config when id is None"""
+        self.client.find_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._find_config(
+                id=None,
+                valid_on=None
+            )
+        )
+
+        self.client.find_application_alert_config.assert_called_once_with(
+            id=None,
+            valid_on=None,
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_update_config_no_id(self):
+        """Test _update_config with missing ID"""
+        result = asyncio.run(
+            self.client._update_config(
+                id=None,
+                payload={"name": "Updated Alert"}
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for update operation"}
+        )
+
+    def test_update_config_no_payload(self):
+        """Test _update_config with missing payload"""
+        result = asyncio.run(
+            self.client._update_config(
+                id="alert1",
+                payload=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "payload is required for update operation"}
+        )
+
+    def test_update_config_success(self):
+        """Test _update_config with valid parameters"""
+        self.client.update_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._update_config(
+                id="alert1",
+                payload={"name": "Updated Alert"}
+            )
+        )
+
+        self.client.update_application_alert_config.assert_called_once_with(
+            id="alert1",
+            payload={"name": "Updated Alert"},
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_delete_config_no_id(self):
+        """Test _delete_config with missing ID"""
+        result = asyncio.run(
+            self.client._delete_config(
+                id=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for delete operation"}
+        )
+
+    def test_delete_config_success(self):
+        """Test _delete_config with valid ID"""
+        self.client.delete_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._delete_config(
+                id="alert1"
+            )
+        )
+
+        self.client.delete_application_alert_config.assert_called_once_with(
+            id="alert1",
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_enable_config_no_id(self):
+        """Test _enable_config with missing ID"""
+        result = asyncio.run(
+            self.client._enable_config(
+                id=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for enable operation"}
+        )
+
+    def test_enable_config_success(self):
+        """Test _enable_config with valid ID"""
+        self.client.enable_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._enable_config(
+                id="alert1"
+            )
+        )
+
+        self.client.enable_application_alert_config.assert_called_once_with(
+            id="alert1",
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_disable_config_no_id(self):
+        """Test _disable_config with missing ID"""
+        result = asyncio.run(
+            self.client._disable_config(
+                id=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for disable operation"}
+        )
+
+    def test_disable_config_success(self):
+        """Test _disable_config with valid ID"""
+        self.client.disable_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._disable_config(
+                id="alert1"
+            )
+        )
+
+        self.client.disable_application_alert_config.assert_called_once_with(
+            id="alert1",
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_restore_config_no_id(self):
+        """Test _restore_config with missing ID"""
+        result = asyncio.run(
+            self.client._restore_config(
+                id=None,
+                created=1234567890
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for restore operation"}
+        )
+
+    def test_restore_config_no_created(self):
+        """Test _restore_config with missing created timestamp"""
+        result = asyncio.run(
+            self.client._restore_config(
+                id="alert1",
+                created=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "created timestamp is required for restore operation"}
+        )
+
+    def test_restore_config_success(self):
+        """Test _restore_config with valid parameters"""
+        self.client.restore_application_alert_config = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._restore_config(
+                id="alert1",
+                created=1234567890
+            )
+        )
+
+        self.client.restore_application_alert_config.assert_called_once_with(
+            id="alert1",
+            created=1234567890,
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_update_baseline_no_id(self):
+        """Test _update_baseline with missing ID"""
+        result = asyncio.run(
+            self.client._update_baseline(
+                id=None
+            )
+        )
+
+        self.assertEqual(
+            result,
+            {"error": "id is required for update_baseline operation"}
+        )
+
+    def test_update_baseline_success(self):
+        """Test _update_baseline with valid ID"""
+        self.client.update_application_alert_config_baseline = AsyncMock(
+            return_value={"success": True}
+        )
+
+        result = asyncio.run(
+            self.client._update_baseline(
+                id="alert1"
+            )
+        )
+
+        self.client.update_application_alert_config_baseline.assert_called_once_with(
+            id="alert1",
+            ctx=None,
+            api_client=ANY
+        )
+
+        self.assertEqual(result, {"success": True})
+
+    def test_find_active_application_alert_configs_empty_result(self):
+        """Test find_active_application_alert_configs with empty result"""
+        # Set up the mock response with empty list
+        mock_response = MagicMock()
+        mock_response.data = b'[]'
+        self.alert_config_api.find_active_application_alert_configs_without_preload_content.return_value = mock_response
+
+        # Call the method
+        result = asyncio.run(self.client.find_active_application_alert_configs(application_id="app1"))
+
+        # Check that the result contains the expected message
+        self.assertIn("configs", result)
+        self.assertEqual(len(result["configs"]), 0)
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["total"], 0)
+        self.assertIn("No active alert configurations found", result["message"])
+        self.assertIn("suggestion", result)
+
+    def test_find_active_application_alert_configs_json_decode_error(self):
+        """Test find_active_application_alert_configs with JSON decode error"""
+        # Set up the mock response with invalid JSON
+        mock_response = MagicMock()
+        mock_response.data = b'invalid json {'
+        self.alert_config_api.find_active_application_alert_configs_without_preload_content.return_value = mock_response
+
+        # Call the method
+        result = asyncio.run(self.client.find_active_application_alert_configs(application_id="app1"))
+
+        # Check that the result contains an error message
+        self.assertIn("error", result)
+        self.assertIn("Failed to parse response JSON", result["error"])
+
+    def test_find_active_application_alert_configs_general_exception(self):
+        """Test find_active_application_alert_configs with general exception"""
+        # Set up the mock to raise an exception
+        self.alert_config_api.find_active_application_alert_configs_without_preload_content.side_effect = Exception("Test error")
+
+        # Call the method
+        result = asyncio.run(self.client.find_active_application_alert_configs(application_id="app1"))
+
+        # Check that the result contains an error message
+        self.assertIn("error", result)
+        self.assertIn("Failed to get active application alert config", result["error"])
+
+    def test_create_application_alert_config_string_payload_json(self):
+        """Test create_application_alert_config with JSON string payload"""
+        # Set up the payload as JSON string and mock response
+        payload = '{"name": "Test Alert", "description": "Test description"}'
+        mock_result = {"id": "alert1", "name": "Test Alert"}
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = mock_result
+        self.alert_config_api.create_application_alert_config.return_value = mock_obj
+
+        # Call the method
+        result = asyncio.run(self.client.create_application_alert_config(payload=payload))
+
+        # Check that the mock was called
+        self.alert_config_api.create_application_alert_config.assert_called_once()
+
+        # Check that the result is correct
+        self.assertEqual(result, mock_result)
+
+    def test_create_application_alert_config_string_payload_single_quotes(self):
+        """Test create_application_alert_config with single-quoted string payload"""
+        # Set up the payload with single quotes and mock response
+        payload = "{'name': 'Test Alert', 'description': 'Test description'}"
+        mock_result = {"id": "alert1", "name": "Test Alert"}
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = mock_result
+        self.alert_config_api.create_application_alert_config.return_value = mock_obj
+
+        # Call the method
+        result = asyncio.run(self.client.create_application_alert_config(payload=payload))
+
+        # Check that the mock was called
+        self.alert_config_api.create_application_alert_config.assert_called_once()
+
+        # Check that the result is correct
+        self.assertEqual(result, mock_result)
+
+    def test_create_application_alert_config_string_payload_invalid(self):
+        """Test create_application_alert_config with invalid string payload"""
+        # Set up the payload with invalid format
+        payload = "invalid {{{ payload"
+
+        # Call the method
+        result = asyncio.run(self.client.create_application_alert_config(payload=payload))
+
+        # Check that the result contains an error message
+        self.assertIn("error", result)
+        self.assertIn("Invalid payload format", result["error"])
+
+    def test_update_application_alert_config_string_payload_json(self):
+        """Test update_application_alert_config with JSON string payload"""
+        # Set up the payload as JSON string and mock response
+        payload = '{"name": "Updated Alert", "description": "Updated description"}'
+        mock_result = {"id": "alert1", "name": "Updated Alert"}
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = mock_result
+        self.alert_config_api.update_application_alert_config.return_value = mock_obj
+
+        # Call the method
+        result = asyncio.run(self.client.update_application_alert_config(id="alert1", payload=payload))
+
+        # Check that the mock was called
+        self.alert_config_api.update_application_alert_config.assert_called_once()
+
+        # Check that the result is correct
+        self.assertEqual(result, mock_result)
+
+    def test_update_application_alert_config_string_payload_single_quotes(self):
+        """Test update_application_alert_config with single-quoted string payload"""
+        # Set up the payload with single quotes and mock response
+        payload = "{'name': 'Updated Alert', 'description': 'Updated description'}"
+        mock_result = {"id": "alert1", "name": "Updated Alert"}
+        mock_obj = MagicMock()
+        mock_obj.to_dict.return_value = mock_result
+        self.alert_config_api.update_application_alert_config.return_value = mock_obj
+
+        # Call the method
+        result = asyncio.run(self.client.update_application_alert_config(id="alert1", payload=payload))
+
+        # Check that the mock was called
+        self.alert_config_api.update_application_alert_config.assert_called_once()
+
+        # Check that the result is correct
+        self.assertEqual(result, mock_result)
+
+    def test_update_application_alert_config_string_payload_invalid(self):
+        """Test update_application_alert_config with invalid string payload"""
+        # Set up the payload with invalid format
+        payload = "invalid {{{ payload"
+
+        # Call the method
+        result = asyncio.run(self.client.update_application_alert_config(id="alert1", payload=payload))
+
+        # Check that the result contains an error message
+        self.assertIn("error", result)
+        self.assertIn("Invalid payload format", result["error"])
 
 if __name__ == '__main__':
     unittest.main()

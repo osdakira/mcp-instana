@@ -3,9 +3,11 @@ Unit tests for the InfrastructureResourcesMCPTools class
 """
 
 import asyncio
+import importlib
 import logging
 import os
 import sys
+import types
 import unittest
 from functools import wraps
 from unittest.mock import MagicMock, patch
@@ -65,6 +67,29 @@ sys.modules['instana_client.api.infrastructure_resources_api'] = MagicMock()
 sys.modules['instana_client.configuration'] = MagicMock()
 sys.modules['instana_client.api_client'] = MagicMock()
 
+# Add minimal model modules for post_snapshots
+sys.modules['instana_client.models.get_snapshots_query'] = types.ModuleType('instana_client.models.get_snapshots_query')
+sys.modules['instana_client.models.time_frame'] = types.ModuleType('instana_client.models.time_frame')
+
+class SimpleModel:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def to_dict(self):
+        def convert(value):
+            if hasattr(value, 'to_dict'):
+                return value.to_dict()
+            if isinstance(value, list):
+                return [convert(i) for i in value]
+            if isinstance(value, dict):
+                return {k: convert(v) for k, v in value.items()}
+            return value
+
+        return {k: convert(v) for k, v in self.__dict__.items()}
+
+sys.modules['instana_client.models.get_snapshots_query'].GetSnapshotsQuery = SimpleModel
+sys.modules['instana_client.models.time_frame'].TimeFrame = SimpleModel
+
 # Set up mock classes
 mock_configuration = MagicMock()
 mock_api_client = MagicMock()
@@ -77,12 +102,14 @@ sys.modules['instana_client.configuration'].Configuration = mock_configuration
 sys.modules['instana_client.api_client'].ApiClient = mock_api_client
 sys.modules['instana_client.api.infrastructure_resources_api'].InfrastructureResourcesApi = mock_resources_api
 
-# Patch the with_header_auth decorator
-with patch('src.core.utils.with_header_auth', mock_with_header_auth):
-    # Import the class to test
-    from src.infrastructure.infrastructure_resources import (
-        InfrastructureResourcesMCPTools,
-    )
+def create_infrastructure_resources_client(read_token: str, base_url: str):
+    with patch('src.core.utils.with_header_auth', mock_with_header_auth):
+        module = importlib.import_module('src.infrastructure.infrastructure_resources')
+        module = importlib.reload(module)
+        return module.InfrastructureResourcesMCPTools(
+            read_token=read_token,
+            base_url=base_url,
+        )
 
 class TestInfrastructureResourcesMCPTools(unittest.TestCase):
     """Test the InfrastructureResourcesMCPTools class"""
@@ -102,7 +129,10 @@ class TestInfrastructureResourcesMCPTools(unittest.TestCase):
         # Create the client
         self.read_token = "test_token"
         self.base_url = "https://test.instana.io"
-        self.client = InfrastructureResourcesMCPTools(read_token=self.read_token, base_url=self.base_url)
+        self.client = create_infrastructure_resources_client(
+            read_token=self.read_token,
+            base_url=self.base_url,
+        )
 
         # Set up the client's API attribute
         self.client.resources_api = self.resources_api
@@ -114,7 +144,6 @@ class TestInfrastructureResourcesMCPTools(unittest.TestCase):
 
     def test_get_monitoring_state_success(self):
         """Test get_monitoring_state with successful response"""
-        # Set up the mock response
         mock_result = {
             "state": "healthy",
             "agents": 10,
@@ -122,30 +151,22 @@ class TestInfrastructureResourcesMCPTools(unittest.TestCase):
         }
         self.resources_api.get_monitoring_state.return_value = mock_result
 
-        # Call the method
         result = asyncio.run(self.client.get_monitoring_state())
 
-        # Check that the API was called
         self.resources_api.get_monitoring_state.assert_called_once()
-
-        # Check that the result is correct
         self.assertEqual(result, mock_result)
 
     def test_get_monitoring_state_error(self):
         """Test get_monitoring_state error handling"""
-        # Set up the mock to raise an exception
         self.resources_api.get_monitoring_state.side_effect = Exception("Test error")
 
-        # Call the method
         result = asyncio.run(self.client.get_monitoring_state())
 
-        # Check that the result contains an error message
         self.assertIn("error", result)
         self.assertIn("Failed to get monitoring state", result["error"])
 
     def test_get_snapshot_success(self):
         """Test get_snapshot with successful response"""
-        # Set up the mock response
         mock_result = {
             "id": "snap1",
             "timestamp": 1625184000000,
@@ -153,60 +174,370 @@ class TestInfrastructureResourcesMCPTools(unittest.TestCase):
         }
         self.resources_api.get_snapshot.return_value = mock_result
 
-        # Call the method
         result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
 
-        # Check that the result is correct
         self.assertEqual(result, mock_result)
+
+    def test_get_snapshot_missing_id(self):
+        result = asyncio.run(self.client.get_snapshot(snapshot_id=""))
+        self.assertIn("error", result)
+        self.assertIn("required", result["error"])
+
+    def test_get_snapshot_not_found_error(self):
+        self.resources_api.get_snapshot.side_effect = Exception("snapshot does not exist")
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertIn("error", result)
+        self.assertIn("does not exist", result["error"])
+
+    def test_get_snapshot_validation_error_fallback_json(self):
+        response = MagicMock()
+        response.status = 200
+        response.data = b'{"id": "snap1", "label": "Snapshot 1"}'
+        self.resources_api.get_snapshot.side_effect = Exception("Validation error")
+        self.resources_api.get_snapshot_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertEqual(result["id"], "snap1")
+        self.assertEqual(result["label"], "Snapshot 1")
+
+    def test_get_snapshot_validation_error_fallback_string(self):
+        response = MagicMock()
+        response.status = 200
+        response.data = b"raw snapshot text"
+        self.resources_api.get_snapshot.side_effect = Exception("Validation error")
+        self.resources_api.get_snapshot_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertEqual(result["message"], "raw snapshot text")
+        self.assertEqual(result["snapshot_id"], "snap1")
 
     def test_get_snapshot_error(self):
         """Test get_snapshot error handling"""
-        # Set up the mock to raise an exception
         self.resources_api.get_snapshot.side_effect = Exception("Test error")
 
-        # Call the method
         result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
 
-        # Check that the result contains an error message
         self.assertIn("error", result)
         self.assertIn("Failed to get snapshot", result["error"])
 
     def test_get_snapshots_success(self):
         """Test get_snapshots with successful response"""
-        # Set up the mock response
         mock_result = [
             {"id": "snap1", "timestamp": 1625184000000},
             {"id": "snap2", "timestamp": 1625184060000}
         ]
         self.resources_api.get_snapshots.return_value = mock_result
 
-        # Call the method
         result = asyncio.run(self.client.get_snapshots(
             plugin="host",
             query="entity.tag=production"
         ))
 
-        # Check that the API was called
         self.resources_api.get_snapshots.assert_called_once()
-
-        # Check that the result is processed correctly (the method transforms empty results)
-        # When no snapshots are found, it returns a summary message
         self.assertIn("message", result)
+
+    def test_get_snapshots_detailed_returns_raw_dict(self):
+        self.resources_api.get_snapshots.return_value = {"items": [{"snapshotId": "s1"}]}
+
+        result = asyncio.run(self.client.get_snapshots(
+            plugin="host",
+            query="entity.tag=production",
+            detailed=True
+        ))
+
+        self.assertEqual(result, {"items": [{"snapshotId": "s1"}]})
+
+    def test_summarize_get_snapshots_response_empty(self):
+        result = self.client._summarize_get_snapshots_response({"items": []})
+
+        self.assertEqual(result["total_found"], 0)
+        self.assertEqual(result["snapshots"], [])
+
+    def test_summarize_get_snapshots_response_with_aws_ecs_host(self):
+        response_data = {
+            "items": [
+                {
+                    "snapshotId": "snap-1",
+                    "label": "Task 1",
+                    "plugin": "docker",
+                    "host": "arn:aws:ecs:us-south-1:123456789012:task/cluster-a/task-123"
+                }
+            ]
+        }
+
+        result = self.client._summarize_get_snapshots_response(response_data)
+
+        self.assertEqual(result["total_found"], 1)
+        self.assertIn("AWS ECS Task", result["snapshots"][0]["host_info"])
+        self.assertIn("cluster-a", result["snapshots"][0]["host_info"])
+
+    def test_summarize_get_snapshots_response_summary_exception(self):
+        result = self.client._summarize_get_snapshots_response({"items": [None]})
+
+        self.assertIn("error", result)
+        self.assertIn("Failed to summarize response", result["error"])
 
     def test_get_snapshots_error(self):
         """Test get_snapshots error handling"""
-        # Set up the mock to raise an exception
         self.resources_api.get_snapshots.side_effect = Exception("Test error")
 
-        # Call the method
         result = asyncio.run(self.client.get_snapshots(
             plugin="host",
             query="entity.tag=production"
         ))
 
-        # Check that the result contains an error message
         self.assertIn("error", result)
         self.assertIn("Failed to get snapshots", result["error"])
+
+    def test_post_snapshots_string_ids_success(self):
+        response = MagicMock()
+        response.status = 200
+        response.data = b'{"items":[{"snapshotId":"snap1","plugin":"jvmRuntimePlatform","label":"JVM","entityId":"e1","from":1,"to":2,"tags":[],"data":{"name":"Test JVM","pid":123,"jvm.version":"17","jvm.vendor":"OpenJDK","jvm.name":"TestJVM","jvm.build":"abc","memory.max":1024,"jvm.pools":{},"jvm.args":[],"jvm.collectors":[]}}]}'
+        self.resources_api.post_snapshots_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.post_snapshots(snapshot_ids='snap1,snap2', detailed=False))
+
+        self.assertEqual(result["total_snapshots"], 1)
+        self.assertEqual(result["snapshots"][0]["snapshotId"], "snap1")
+        self.assertEqual(result["snapshots"][0]["plugin"], "jvmRuntimePlatform")
+
+    def test_post_snapshots_missing_ids(self):
+        result = asyncio.run(self.client.post_snapshots(snapshot_ids=[], detailed=False))
+        self.assertIn("error", result)
+        self.assertIn("snapshot_ids parameter is required", result["error"])
+
+    def test_post_snapshots_status_error(self):
+        response = MagicMock()
+        response.status = 500
+        response.data = b'Internal error'
+        self.resources_api.post_snapshots_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.post_snapshots(snapshot_ids=['snap1'], detailed=False))
+
+        self.assertIn("error", result)
+        self.assertIn("SDK returned status 500", result["error"])
+
+    def test_software_versions_list_response(self):
+        self.resources_api.software_versions.return_value = [
+            {"name": "App1"},
+            {"name": "App2"}
+        ]
+
+        result = asyncio.run(self.client.software_versions())
+
+        self.assertEqual(result["items"], [{"name": "App1"}, {"name": "App2"}])
+
+    def test_software_versions_with_tag_tree(self):
+        mock_result = {
+            "tagTree": [
+                {"label": "Service", "children": [{"tagName": "service.name", "description": "Service name"}]}
+            ]
+        }
+        self.resources_api.software_versions.return_value = MagicMock(to_dict=MagicMock(return_value=mock_result))
+
+        result = asyncio.run(self.client.software_versions())
+
+        self.assertIn("tagNames", result)
+        self.assertEqual(result["tagNames"][0]["tagName"], "service.name")
+
+    def test_software_versions_unexpected_format(self):
+        """Test software_versions with unexpected result format"""
+        class UnexpectedType:
+            pass
+
+        self.resources_api.software_versions.return_value = UnexpectedType()
+
+        result = asyncio.run(self.client.software_versions())
+
+        self.assertIn("data", result)
+
+    def test_software_versions_with_large_items_list(self):
+        """Test software_versions with more than 10 items"""
+        mock_result = {
+            "items": [{"name": f"App{i}"} for i in range(15)]
+        }
+        self.resources_api.software_versions.return_value = mock_result
+
+        result = asyncio.run(self.client.software_versions())
+
+        self.assertIn("summary", result)
+        self.assertEqual(len(result["items"]), 10)
+
+    def test_get_plugin_payload_success(self):
+        """Test get_plugin_payload with successful response"""
+        mock_result = {"payload": "data"}
+        self.resources_api.get_plugin_payload.return_value = mock_result
+
+        result = asyncio.run(self.client.get_plugin_payload(
+            snapshot_id="snap1",
+            payload_key="key1"
+        ))
+
+        self.assertEqual(result, mock_result)
+
+    def test_get_plugin_payload_error(self):
+        """Test get_plugin_payload error handling"""
+        self.resources_api.get_plugin_payload.side_effect = Exception("Test error")
+
+        result = asyncio.run(self.client.get_plugin_payload(
+            snapshot_id="snap1",
+            payload_key="key1"
+        ))
+
+        self.assertIn("error", result)
+
+    def test_get_snapshot_with_to_dict_method(self):
+        """Test get_snapshot when result has to_dict method"""
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {"id": "snap1", "data": "test"}
+        self.resources_api.get_snapshot.return_value = mock_result
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertEqual(result["id"], "snap1")
+
+    def test_get_snapshot_with_other_type(self):
+        """Test get_snapshot when result is neither dict nor has to_dict"""
+        self.resources_api.get_snapshot.return_value = "string_result"
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertIn("data", result)
+        self.assertEqual(result["snapshot_id"], "snap1")
+
+    def test_get_snapshot_validation_error_fallback_http_error(self):
+        """Test get_snapshot validation error with HTTP error in fallback"""
+        response = MagicMock()
+        response.status = 404
+        self.resources_api.get_snapshot.side_effect = Exception("Validation error")
+        self.resources_api.get_snapshot_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertIn("error", result)
+
+    def test_get_snapshot_validation_error_fallback_exception(self):
+        """Test get_snapshot validation error with exception in fallback"""
+        self.resources_api.get_snapshot.side_effect = Exception("Validation error")
+        self.resources_api.get_snapshot_without_preload_content.side_effect = Exception("Fallback error")
+
+        result = asyncio.run(self.client.get_snapshot(snapshot_id="snap1"))
+
+        self.assertIn("error", result)
+
+    def test_get_snapshots_with_to_dict_method(self):
+        """Test get_snapshots when result has to_dict method"""
+        mock_result = MagicMock()
+        mock_result.to_dict.return_value = {"items": [{"snapshotId": "s1"}]}
+        self.resources_api.get_snapshots.return_value = mock_result
+
+        result = asyncio.run(self.client.get_snapshots())
+
+        self.assertIn("message", result)
+
+    def test_get_snapshots_with_other_type(self):
+        """Test get_snapshots when result is neither dict nor has to_dict"""
+        self.resources_api.get_snapshots.return_value = "string_result"
+
+        result = asyncio.run(self.client.get_snapshots())
+
+        self.assertIn("message", result)
+
+    def test_post_snapshots_with_list_string(self):
+        """Test post_snapshots with list-formatted string"""
+        response = MagicMock()
+        response.status = 200
+        response.data = b'{"items":[]}'
+        self.resources_api.post_snapshots_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.post_snapshots(snapshot_ids='["snap1","snap2"]'))
+
+        self.assertEqual(result["total_snapshots"], 0)
+
+    def test_post_snapshots_detailed_true(self):
+        """Test post_snapshots with detailed=True"""
+        response = MagicMock()
+        response.status = 200
+        response.data = b'{"items":[{"snapshotId":"snap1"}]}'
+        self.resources_api.post_snapshots_without_preload_content.return_value = response
+
+        result = asyncio.run(self.client.post_snapshots(snapshot_ids=['snap1'], detailed=True))
+
+        self.assertIn("items", result)
+
+    def test_summarize_snapshots_response_nodejs(self):
+        """Test _summarize_snapshots_response with Node.js snapshot"""
+        response_data = {
+            "items": [{
+                "snapshotId": "snap1",
+                "plugin": "nodeJsRuntimePlatform",
+                "label": "Node App",
+                "entityId": "e1",
+                "from": 1,
+                "to": 2,
+                "tags": [],
+                "data": {
+                    "name": "my-app",
+                    "version": "1.0.0",
+                    "description": "Test app",
+                    "pid": 1234,
+                    "versions": {"node": "16.0.0", "v8": "9.0.0", "uv": "1.0.0"},
+                    "sensorVersion": "1.0.0",
+                    "dependencies": {"express": "4.0.0"},
+                    "startTime": 1234567890,
+                    "http": {"/api": {}},
+                    "gc.statsSupported": True,
+                    "libuv.statsSupported": True
+                }
+            }]
+        }
+
+        result = self.client._summarize_snapshots_response(response_data)
+
+        self.assertEqual(result["total_snapshots"], 1)
+        self.assertIn("key_info", result["snapshots"][0])
+
+    def test_summarize_snapshots_response_generic(self):
+        """Test _summarize_snapshots_response with generic plugin"""
+        response_data = {
+            "items": [{
+                "snapshotId": "snap1",
+                "plugin": "customPlugin",
+                "label": "Custom",
+                "entityId": "e1",
+                "from": 1,
+                "to": 2,
+                "tags": [],
+                "data": {"field1": "value1", "field2": "value2"}
+            }]
+        }
+
+        result = self.client._summarize_snapshots_response(response_data)
+
+        self.assertEqual(result["total_snapshots"], 1)
+        self.assertIn("data_keys", result["snapshots"][0]["key_info"])
+
+    def test_summarize_snapshots_response_error(self):
+        """Test _summarize_snapshots_response with error - function handles gracefully"""
+        response_data = {"items": [{"invalid": "data"}]}
+
+        result = self.client._summarize_snapshots_response(response_data)
+
+        # The function handles missing fields gracefully, returning None values
+        self.assertEqual(result["total_snapshots"], 1)
+        self.assertIsNone(result["snapshots"][0]["snapshotId"])
+
+    def test_post_snapshots_exception(self):
+        """Test post_snapshots with exception"""
+        self.resources_api.post_snapshots_without_preload_content.side_effect = Exception("Test error")
+
+        result = asyncio.run(self.client.post_snapshots(snapshot_ids=['snap1']))
+
+        self.assertIn("error", result)
 
 
 if __name__ == '__main__':

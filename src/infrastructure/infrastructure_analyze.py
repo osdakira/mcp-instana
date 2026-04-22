@@ -312,6 +312,9 @@ class InfrastructureAnalyze(BaseInstanaClient):
         from instana_client.models.cursor_pagination import (
             CursorPagination,
         )
+        from instana_client.models.cursor_pagination_with_ui_cursor_infra_explore_cursor import (
+            CursorPaginationWithUiCursorInfraExploreCursor,
+        )
         from instana_client.models.get_infrastructure_groups_query import (
             GetInfrastructureGroupsQuery,
         )
@@ -516,8 +519,14 @@ class InfrastructureAnalyze(BaseInstanaClient):
 
             logger.info(f"Pagination: pageSize={page_size}, offset={offset}")
 
-        # Build CursorPagination object (use camelCase aliases for field names)
-        if offset is not None and offset > 0:
+        # Build pagination object - different types for grouped vs non-grouped queries
+        if group_by and len(group_by) > 0:
+            # For grouped queries, use CursorPaginationWithUiCursorInfraExploreCursor
+            if offset is not None and offset > 0:
+                cursor_pagination = CursorPaginationWithUiCursorInfraExploreCursor(retrievalSize=page_size, offset=offset)
+            else:
+                cursor_pagination = CursorPaginationWithUiCursorInfraExploreCursor(retrievalSize=page_size)
+        elif offset is not None and offset > 0:
             cursor_pagination = CursorPagination(retrievalSize=page_size, offset=offset)
         else:
             cursor_pagination = CursorPagination(retrievalSize=page_size)

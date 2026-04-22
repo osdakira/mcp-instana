@@ -153,7 +153,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
 
         # Extract minutes
         if "minute" in time_range_lower:
-            minute_match = re.search(r'(\d+)\s*minute', time_range_lower)
+            minute_match = re.search(r'(\d+)\s?minute', time_range_lower)  # NOSONAR - \s? is safe, matches 0-1 whitespace
             if minute_match:
                 minutes = int(minute_match.group(1))
                 window_size = minutes * MS_PER_MINUTE
@@ -162,7 +162,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
 
         # Extract hours
         elif "hour" in time_range_lower:
-            hour_match = re.search(r'(\d+)\s*hour', time_range_lower)
+            hour_match = re.search(r'(\d+)\s?hour', time_range_lower)  # NOSONAR - \s? is safe, matches 0-1 whitespace
             if hour_match:
                 hours = int(hour_match.group(1))
                 window_size = hours * MS_PER_HOUR
@@ -175,7 +175,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
 
         # Extract days
         elif "day" in time_range_lower:
-            day_match = re.search(r'(\d+)\s*day', time_range_lower)
+            day_match = re.search(r'(\d+)\s?day', time_range_lower)  # NOSONAR - \s? is safe, matches 0-1 whitespace
             if day_match:
                 days = int(day_match.group(1))
                 window_size = days * MS_PER_DAY
@@ -184,7 +184,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
 
         # Extract weeks
         elif "week" in time_range_lower:
-            week_match = re.search(r'(\d+)\s*week', time_range_lower)
+            week_match = re.search(r'(\d+)\s?week', time_range_lower)  # NOSONAR - \s? is safe, matches 0-1 whitespace
             if week_match:
                 weeks = int(week_match.group(1))
                 window_size = weeks * MS_PER_WEEK
@@ -193,7 +193,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
 
         # Extract months
         elif "month" in time_range_lower:
-            month_match = re.search(r'(\d+)\s*month', time_range_lower)
+            month_match = re.search(r'(\d+)\s?month', time_range_lower)  # NOSONAR - \s? is safe, matches 0-1 whitespace
             if month_match:
                 months = int(month_match.group(1))
                 window_size = months * MS_PER_MONTH
@@ -1073,7 +1073,7 @@ class AgentMonitoringEventsMCPTools(BaseInstanaClient):
     @with_header_auth(EventsApi)
     async def get_events_by_ids(
         self,
-        event_ids: Union[List[str], str],
+        event_ids: list[str] | str,
         ctx=None, api_client=None) -> Dict[str, Any]:
         """
         Get events by their IDs.

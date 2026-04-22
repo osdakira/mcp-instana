@@ -21,11 +21,9 @@ license = {text = "Apache-2.0"}
 # ONLY dependencies that are actually imported/used in the code
 dependencies = [
     # Core MCP framework - imported in src/prompts/__init__.py and src/core/server.py
-    "fastmcp>=2.14.5",
-    # MCP SDK for types and annotations
-    "mcp",
-    # Instana API client - imported in src/event/events_tools.py
-    "instana-client==1.0.6",
+    "fastmcp>=2.4.5,<=3.1.1",    # MCP SDK for types and annotations
+    "mcp>=1.26.0,<1.27.0",    # Instana API client - imported in src/event/events_tools.py
+    "instana-client==1.0.7",
     # Lazy imports for Instana SDK - required by instana-client
     "lazy_imports",
     # HTTP client - imported in src/core/utils.py

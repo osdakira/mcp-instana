@@ -318,7 +318,7 @@ class WebsiteConfigurationMCPTools(BaseInstanaClient):
     @with_header_auth(WebsiteConfigurationApi)
     async def create_website(self,
                             name: str,
-                            payload: Optional[Union[List[Dict[str, Any]], str]] = None,
+                            payload: Optional[list[Dict[str, Any]] | str] = None,
                             ctx=None,
                             api_client=None) -> Dict[str, Any]:
         """

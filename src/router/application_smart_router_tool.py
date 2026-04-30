@@ -128,7 +128,7 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             operations: get_all_traces, get_trace_details
 
             get_all_traces:
-            params: {payload}
+            params: {payload, outputDir}
 
             Payload parameters:
             - timeFrame: Time range (windowSize, to)
@@ -143,6 +143,7 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             - tagFilterExpression: Filter by tags
             - pagination: {retrievalSize, ingestionTime, offset}
             - order: {by, direction}
+            - outputDir (optional): Directory path to save output files. Defaults to INSTANA_API_TEMPORARY_DIR env var or /tmp
 
             Minimal example:
             params={"payload": {"timeFrame": {"windowSize": 3600000, "to": 1710658800000}, "pagination": {"retrievalSize": 200}}}
@@ -159,7 +160,7 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
             Note: Trace data saved to /tmp/instana_traces_{timestamp}.jsonl. Returns filePath, itemCount, fileSizeBytes, canLoadMore, totalHits, and cursor (ingestionTime, offset) if more data available. Use cursor values in pagination for next page.
 
             get_trace_details:
-            params: {id, retrievalSize, offset, ingestionTime}
+            params: {id, retrievalSize, offset, ingestionTime, outputDir}
 
             Parameters:
             - id (required): Trace ID
@@ -171,6 +172,7 @@ class ApplicationSmartRouterMCPTool(BaseInstanaClient):
                 - Datetime with timezone (e.g., "10 March 2026, 2:00 PM|IST")
                 - If no timezone specified, UTC is assumed
                 Required if offset provided
+            - outputDir (optional): Directory path to save output files. Defaults to INSTANA_API_TEMPORARY_DIR env var or /tmp
 
             Example:
             params={"id": "trace-id-123", "retrievalSize": 100}

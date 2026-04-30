@@ -81,13 +81,15 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         try:
             if operation == "get_all_traces":
                 payload = params.get('payload')
-                return await self.get_all_traces(payload, ctx=ctx)
+                output_dir = params.get('outputDir')
+                return await self.get_all_traces(payload, output_dir=output_dir, ctx=ctx)
             elif operation == "get_trace_details":
                 return await self.get_trace_details(
                     id=params.get('id'),
                     retrieval_size=params.get('retrievalSize'),
                     offset=params.get('offset'),
                     ingestion_time=params.get('ingestionTime'),
+                    output_dir=params.get('outputDir'),
                     ctx=ctx
                 )
             else:
@@ -192,6 +194,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
         retrieval_size: Optional[int] = None,
         offset: Optional[int] = None,
         ingestion_time: Optional[int] = None,
+        output_dir: Optional[str] = None,
         ctx: Optional[Context] = None,
         api_client: Any = None
     ) -> Dict[str, Any]:
@@ -204,6 +207,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                                         Minimum value is 1 and maximum value is 10000.
             offset (Optional[int]): The number of records to be skipped from the ingestion_time.
             ingestion_time (Optional[int]): The timestamp indicating the starting point from which data was ingested.
+            output_dir (Optional[str]): Directory path to save output files. Defaults to INSTANA_API_TEMPORARY_DIR env var or /tmp.
             ctx: Optional context for the request.
         Returns:
             Dict containing filePath, itemCount, fileSizeBytes, canLoadMore,
@@ -218,7 +222,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
-            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            if output_dir is None:
+                output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
             output_path = f"{output_dir}/instana_trace_details_{id}_{timestamp}.jsonl"
 
             # Fetch trace details
@@ -318,6 +323,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
     async def get_all_traces(
         self,
         payload: Optional[Union[Dict[str, Any], str]]=None,
+        output_dir: Optional[str] = None,
         api_client = None,
         ctx: Optional[Context] = None
     ) -> Dict[str, Any]:
@@ -329,6 +335,7 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
         Args:
             payload: Request payload for GetTraces API
+            output_dir: Directory path to save output files. Defaults to INSTANA_API_TEMPORARY_DIR env var or /tmp.
             api_client: API client instance
             ctx: MCP context
 
@@ -380,7 +387,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
 
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
-            output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+            if output_dir is None:
+                output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
             output_path = f"{output_dir}/instana_traces_{timestamp}.jsonl"
 
             # Call API

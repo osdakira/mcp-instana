@@ -89,7 +89,39 @@ class InfrastructureAnalyze(BaseInstanaClient):
 
     @register_as_tool(
         title="Analyze Infrastructure with Elicitation (Two-Pass)",
-        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
+        description="""Two-pass infrastructure analysis using machine-facing elicitation.
+
+**Pass 1 - Intent to Schema:**
+Provide intent and entity hint. Server returns full schema via MCP elicitation.
+The server dynamically loads available entity types from the Instana API catalog,
+ensuring support for all monitored technologies in your environment.
+
+Parameters:
+- intent: Natural language query (e.g., "maximum heap size of JVM on host galactica1")
+- entity: Entity hint (e.g., "jvm", "kubernetes", "docker", "genai", "host", "db2", "ibmmq")
+  The system supports all entity types available in your Instana installation, including
+  Kubernetes pods/deployments, JVM runtimes, hosts, databases, message queues, containers,
+  and any custom or newly added entity types.
+
+**Pass 2 - Selections to Results:**
+Provide exact selections from schema. Server builds payload and calls API.
+
+Parameters:
+- selections: Dict with:
+  - entity_type: Exact entity type from schema (e.g., "jvmRuntimePlatform", "kubernetesPod")
+  - metrics: Array of exact metric names from schema (e.g., ["jvm.heap.maxSize", "jvm.heap.used"])
+  - aggregation: Aggregation type (e.g., "max", "mean", "sum")
+  - filters: List of dicts with name/value pairs (e.g., [{"name": "host.name", "value": "galactica1"}])
+  - groupBy: (optional) Array of tag names to group entities by (e.g., ["host.name"], ["kubernetes.namespace.name"])
+  - timeRange: (optional) Time range string (e.g., "1h", "30m", "2h", "1d"). Default: "1h"
+  - order: (optional) Dict with "by" (metric name) and "direction" ("ASC" or "DESC")
+
+Returns:
+    List of MCP content blocks (TextContent or EmbeddedResource)
+
+Note: Entity type support is automatically synchronized with your Instana installation's
+plugin catalog, ensuring compatibility with all monitored technologies without manual updates."""
     )
     @with_header_auth(InfrastructureAnalyzeApi)
     async def analyze_infrastructure(
@@ -100,40 +132,7 @@ class InfrastructureAnalyze(BaseInstanaClient):
         ctx: Optional[Context] = None,
         api_client: Any = None
     ) -> List[Any]:
-        """
-        Two-pass infrastructure analysis using machine-facing elicitation.
-
-        **Pass 1 - Intent to Schema:**
-        Provide intent and entity hint. Server returns full schema via MCP elicitation.
-        The server dynamically loads available entity types from the Instana API catalog,
-        ensuring support for all monitored technologies in your environment.
-
-        Parameters:
-        - intent: Natural language query (e.g., "maximum heap size of JVM on host galactica1")
-        - entity: Entity hint (e.g., "jvm", "kubernetes", "docker", "genai", "host", "db2", "ibmmq")
-          The system supports all entity types available in your Instana installation, including
-          Kubernetes pods/deployments, JVM runtimes, hosts, databases, message queues, containers,
-          and any custom or newly added entity types.
-
-        **Pass 2 - Selections to Results:**
-        Provide exact selections from schema. Server builds payload and calls API.
-
-        Parameters:
-        - selections: Dict with:
-          - entity_type: Exact entity type from schema (e.g., "jvmRuntimePlatform", "kubernetesPod")
-          - metrics: Array of exact metric names from schema (e.g., ["jvm.heap.maxSize", "jvm.heap.used"])
-          - aggregation: Aggregation type (e.g., "max", "mean", "sum")
-          - filters: List of dicts with name/value pairs (e.g., [{"name": "host.name", "value": "galactica1"}])
-          - groupBy: (optional) Array of tag names to group entities by (e.g., ["host.name"], ["kubernetes.namespace.name"])
-          - timeRange: (optional) Time range string (e.g., "1h", "30m", "2h", "1d"). Default: "1h"
-          - order: (optional) Dict with "by" (metric name) and "direction" ("ASC" or "DESC")
-
-        Returns:
-            List of MCP content blocks (TextContent or EmbeddedResource)
-
-        Note: Entity type support is automatically synchronized with your Instana installation's
-        plugin catalog, ensuring compatibility with all monitored technologies without manual updates.
-        """
+        """Two-pass infrastructure analysis using machine-facing elicitation."""
         try:
             # Handle case where FastMCP passes selections as a JSON string
             if isinstance(selections, str):
@@ -322,6 +321,9 @@ class InfrastructureAnalyze(BaseInstanaClient):
         # For PoC, we'll build a simple payload directly
         from instana_client.models.cursor_pagination import (
             CursorPagination,
+        )
+        from instana_client.models.cursor_pagination_with_ui_cursor_infra_explore_cursor import (
+            CursorPaginationWithUiCursorInfraExploreCursor,
         )
         from instana_client.models.get_infrastructure_groups_query import (
             GetInfrastructureGroupsQuery,
@@ -527,8 +529,14 @@ class InfrastructureAnalyze(BaseInstanaClient):
 
             logger.info(f"Pagination: pageSize={page_size}, offset={offset}")
 
-        # Build CursorPagination object (use camelCase aliases for field names)
-        if offset is not None and offset > 0:
+        # Build pagination object - different types for grouped vs non-grouped queries
+        if group_by and len(group_by) > 0:
+            # For grouped queries, use CursorPaginationWithUiCursorInfraExploreCursor
+            if offset is not None and offset > 0:
+                cursor_pagination = CursorPaginationWithUiCursorInfraExploreCursor(retrievalSize=page_size, offset=offset)
+            else:
+                cursor_pagination = CursorPaginationWithUiCursorInfraExploreCursor(retrievalSize=page_size)
+        elif offset is not None and offset > 0:
             cursor_pagination = CursorPagination(retrievalSize=page_size, offset=offset)
         else:
             cursor_pagination = CursorPagination(retrievalSize=page_size)

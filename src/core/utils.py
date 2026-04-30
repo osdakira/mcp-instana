@@ -4,15 +4,27 @@ Base Instana API Client Module
 This module provides the base client for interacting with the Instana API.
 """
 
+import logging
 import sys
 from functools import wraps
-from typing import Any, Callable, Dict, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import requests
+
+from src.core.api_headers import build_instana_api_headers
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Import MCP dependencies
 from fastmcp import Context
 from mcp.types import ToolAnnotations
+
+# Default charset for response decoding
+DEFAULT_CHARSET = 'utf-8'
+
+# Constants for error messages
+AUTH_FAILED_MSG = "Authentication failed: %s"
 
 # Import for getting package version from meta data rather than server.py
 try:
@@ -20,18 +32,19 @@ try:
     __version__ = version("mcp-instana")
 except Exception:
     # Fallback version if package metadata is not available
-    __version__ = "0.9.6"
+    __version__ = "0.9.7"
 
 # Registry to store all tools
 MCP_TOOLS = {}
 
-def register_as_tool(title=None, annotations=None):
+def register_as_tool(title=None, annotations=None, description=None):
     """
     Enhanced decorator that registers both in MCP_TOOLS and with @mcp.tool
 
     Args:
         title: Title for the MCP tool (optional, defaults to function name)
         annotations: ToolAnnotations for the MCP tool (optional)
+        description: Explicit description for the tool (optional, uses docstring if not provided)
     """
     def decorator(func):
         # Get function metadata
@@ -46,9 +59,16 @@ def register_as_tool(title=None, annotations=None):
             destructiveHint=False
         )
 
+        # Use provided description or extract from docstring
+        tool_description = description
+        if not tool_description and func.__doc__:
+            # Extract first paragraph from docstring as description
+            tool_description = func.__doc__.strip().split('\n\n')[0].strip()
+
         # Store the metadata for later use by the server
         func._mcp_title = tool_title
         func._mcp_annotations = tool_annotations
+        func._mcp_description = tool_description
 
         # Register in MCP_TOOLS (existing functionality)
         MCP_TOOLS[func_name] = func
@@ -77,8 +97,118 @@ def _validate_http_headers(instana_token, instana_base_url):
     return None
 
 
+def _validate_http_auth_headers(instana_api_token, instana_auth_token, instana_csrf_token, instana_base_url):
+    """Validate HTTP authentication headers."""
+    # Check for API token auth (needs token + base_url)
+    has_api_token_auth = instana_api_token and instana_base_url
+
+    # Check for session token auth (needs auth_token + csrf_token + base_url)
+    has_session_auth = instana_auth_token and instana_csrf_token and instana_base_url
+
+    if not has_api_token_auth and not has_session_auth:
+        missing = []
+        if not instana_base_url:
+            missing.append("instana-base-url")
+        if not instana_api_token and not (instana_auth_token and instana_csrf_token):
+            missing.append("either (instana-api-token) OR (instana-auth-token + instana-csrf-token)")
+        error_msg = f"HTTP mode detected but missing required headers: {', '.join(missing)}"
+        logger.error(AUTH_FAILED_MSG, error_msg)
+        return {"error": error_msg}
+
+    # Validate URL format - HTTP protocol is allowed for development/testing environments
+    # In production, HTTPS should always be used for security
+    if not instana_base_url.startswith("http://") and not instana_base_url.startswith("https://"):  # NOSONAR - HTTP allowed for dev/test
+        error_msg = "Instana base URL must start with http:// or https://"
+        logger.error(AUTH_FAILED_MSG, error_msg)
+        return {"error": error_msg}
+
+    return None
+
+
+def _create_api_client_with_config(base_url, instana_api_token, auth_headers):
+    """Create API client with configuration based on auth type."""
+    from instana_client.api_client import ApiClient
+    from instana_client.configuration import Configuration
+
+    configuration = Configuration()
+    configuration.host = base_url
+
+    # Configure based on auth type
+    if "Authorization" in auth_headers:
+        # API token mode
+        if instana_api_token is None:
+            error_msg = "API token is required but not provided"
+            logger.error(AUTH_FAILED_MSG, error_msg)
+            return None, {"error": error_msg}
+        configuration.api_key['ApiKeyAuth'] = instana_api_token
+        configuration.api_key_prefix['ApiKeyAuth'] = 'apiToken'
+        logger.debug("Using API token authentication")
+    else:
+        # Session token mode
+        logger.debug("Using session token authentication")
+
+    # Create API client instance
+    api_client_instance = ApiClient(configuration=configuration)
+    user_agent_value = f"MCP-server/{__version__}"
+    api_client_instance.set_default_header("User-Agent", header_value=user_agent_value)
+
+    # For session auth, add CSRF and Cookie headers
+    if "X-CSRF-TOKEN" in auth_headers:
+        api_client_instance.set_default_header("X-CSRF-TOKEN", auth_headers["X-CSRF-TOKEN"])
+        api_client_instance.set_default_header("Cookie", auth_headers["Cookie"])
+        logger.debug("Set session auth headers")
+
+    return api_client_instance, None
+
+
+def _try_http_mode_auth(api_class):
+    """Attempt HTTP mode authentication."""
+    try:
+        from fastmcp.server.dependencies import get_http_headers
+        headers = get_http_headers()
+
+        # Extract all possible authentication headers
+        instana_api_token = headers.get("instana-api-token")
+        instana_auth_token = headers.get("instana-auth-token")
+        instana_csrf_token = headers.get("instana-csrf-token")
+        instana_base_url = headers.get("instana-base-url")
+        instana_cookie_name = headers.get("instana-cookie-name")
+
+        # Check if we're in HTTP mode
+        if not (instana_api_token or instana_auth_token or instana_csrf_token or instana_base_url):
+            return None
+
+        # Validate headers
+        validation_error = _validate_http_auth_headers(
+            instana_api_token, instana_auth_token, instana_csrf_token, instana_base_url
+        )
+        if validation_error:
+            return validation_error
+
+        # Build auth headers
+        auth_headers = build_instana_api_headers(
+            auth_token=instana_auth_token,
+            csrf_token=instana_csrf_token,
+            api_token=instana_api_token,
+            cookie_name=instana_cookie_name
+        )
+
+        # Create API client
+        api_client_instance, error = _create_api_client_with_config(
+            instana_base_url, instana_api_token, auth_headers
+        )
+        if error:
+            return error
+
+        return api_class(api_client=api_client_instance)
+
+    except (ImportError, AttributeError) as e:
+        logger.error("Header detection failed, using STDIO mode: %s", e)
+        return None
+
+
 def _create_api_client_from_config(base_url, api_token):
-    """Create API client from configuration."""
+    """Create API client from configuration (for STDIO mode)."""
     from instana_client.api_client import ApiClient
     from instana_client.configuration import Configuration
 
@@ -92,33 +222,6 @@ def _create_api_client_from_config(base_url, api_token):
     api_client_instance.set_default_header("User-Agent", header_value=user_agent_value)
 
     return api_client_instance
-
-
-def _try_http_mode_auth(api_class):
-    """Attempt HTTP mode authentication."""
-    try:
-        from fastmcp.server.dependencies import get_http_headers
-        headers = get_http_headers()
-
-        instana_token = headers.get("instana-api-token")
-        instana_base_url = headers.get("instana-base-url")
-
-        # Check if we're in HTTP mode
-        if not (instana_token or instana_base_url):
-            return None
-
-        # Validate headers
-        validation_error = _validate_http_headers(instana_token, instana_base_url)
-        if validation_error:
-            return validation_error
-
-        # Create API client
-        api_client_instance = _create_api_client_from_config(instana_base_url, instana_token)
-        return api_class(api_client=api_client_instance)
-
-    except (ImportError, AttributeError) as e:
-        print(f"Header detection failed, using STDIO mode: {e}", file=sys.stderr)
-        return None
 
 
 def _validate_stdio_credentials(self):
@@ -281,6 +384,32 @@ class BaseInstanaClient:
             "User-Agent": f"MCP-server/{__version__}",
         }
 
+    def handle_api_error_response(self, response, operation_name: str, logger) -> Dict[str, Any]:
+        """
+        Handle API error responses in a standardized way.
+
+        Args:
+            response: The API response object
+            operation_name: Name of the operation for error messages
+            logger: Logger instance for logging errors
+
+        Returns:
+            Dictionary with error information
+        """
+        error_message = f"Failed to {operation_name}: HTTP {response.status}"
+        logger.error(f"[{operation_name}] {error_message}")
+
+        try:
+            error_body = decode_response(response)
+            logger.error(f"[{operation_name}] API Error Response: {error_body}")
+            return {
+                "error": error_message,
+                "details": error_body,
+                "status_code": response.status
+            }
+        except Exception:
+            return {"error": error_message, "status_code": response.status}
+
     async def make_request(self, endpoint: str, params: Union[Dict[str, Any], None] = None, method: str = "GET", json: Union[Dict[str, Any], None] = None) -> Dict[str, Any]:
         """Make a request to the Instana API."""
         if endpoint is None:
@@ -314,3 +443,122 @@ class BaseInstanaClient:
         except Exception as e:
             print(f"Unexpected error: {e!s}", file=sys.stderr)
             return {"error": f"Unexpected error: {e!s}"}
+
+def decode_response(response) -> str:
+    """
+    Safely decode response data using the response's charset or UTF-8 as fallback.
+
+    Args:
+        response: The HTTP response object
+
+    Returns:
+        Decoded response text
+    """
+    from email.message import Message
+
+    # Try to get charset from response headers using standard library parsing
+    charset = DEFAULT_CHARSET  # Default fallback
+
+    # Check if response has charset information
+    if hasattr(response, 'headers') and response.headers:
+        content_type = response.headers.get('Content-Type', '')
+        if content_type:
+            # Use email.message.Message for proper RFC-compliant Content-Type parsing
+            # This handles quoted values, whitespace, case-insensitivity, etc.
+            msg = Message()
+            msg['content-type'] = content_type
+            parsed_charset = msg.get_content_charset()
+            if parsed_charset:
+                charset = parsed_charset
+
+    try:
+        return response.data.decode(charset)
+    except (UnicodeDecodeError, LookupError):
+        # Fallback to DEFAULT_CHARSET if specified charset fails
+        return response.data.decode(DEFAULT_CHARSET, errors='replace')
+
+
+def extract_tag_names_from_tree(node, tag_names=None):
+    """
+    Recursively extract tag names from nested tree structure.
+
+    Args:
+        node: The tree node (dict or list) to extract tag names from
+        tag_names: List to collect tag names (created if None)
+
+    Returns:
+        List of extracted tag names
+    """
+    if tag_names is None:
+        tag_names = []
+
+    if isinstance(node, dict):
+        # If this node has a tagName, add it
+        if node.get("tagName"):
+            tag_names.append(node["tagName"])
+
+        # Recursively process children
+        if "children" in node and isinstance(node["children"], list):
+            for child in node["children"]:
+                extract_tag_names_from_tree(child, tag_names)
+    elif isinstance(node, list):
+        # If it's a list, process each item
+        for item in node:
+            extract_tag_names_from_tree(item, tag_names)
+
+    return tag_names
+
+
+def process_tag_catalog_response(full_response: Dict[str, Any], beacon_type: str, use_case: str) -> Dict[str, Any]:
+    """
+    Process tag catalog API response to extract tag names.
+
+    This shared function reduces code duplication between website and mobile app catalog modules.
+
+    Args:
+        full_response: The full API response containing tagTree and/or tags
+        beacon_type: The beacon type for the catalog
+        use_case: The use case for the catalog
+
+    Returns:
+        Dictionary with tag_names, count, beacon_type, and use_case
+    """
+    tag_names = []
+
+    # Extract from tagTree using shared utility function
+    if "tagTree" in full_response:
+        extract_tag_names_from_tree(full_response["tagTree"], tag_names)
+
+    # Extract from flat tags list (using 'name' field)
+    if "tags" in full_response and isinstance(full_response["tags"], list):
+        for tag in full_response["tags"]:
+            if isinstance(tag, dict) and "name" in tag and tag["name"]:
+                tag_names.append(tag["name"])
+
+    # Remove duplicates and sort
+    tag_names = sorted(set(tag_names))
+
+    return {
+        "tag_names": tag_names,
+        "count": len(tag_names),
+        "beacon_type": beacon_type,
+        "use_case": use_case
+    }
+
+
+def normalize_beacon_type(beacon_type: str, beacon_type_map: Dict[str, str]) -> str:
+    """
+    Normalize beacon type from uppercase to camelCase format.
+
+    This shared function reduces code duplication between website and mobile app routers.
+
+    Args:
+        beacon_type: The beacon type to normalize (e.g., "SESSION_START", "PAGELOAD")
+        beacon_type_map: Mapping of uppercase to camelCase formats
+
+    Returns:
+        Normalized beacon type in camelCase format
+    """
+    if beacon_type and isinstance(beacon_type, str) and beacon_type.upper() in beacon_type_map:
+        return beacon_type_map[beacon_type.upper()]
+    return beacon_type

@@ -372,7 +372,7 @@ class InfrastructureResourcesMCPTools(BaseInstanaClient):
     # @register_as_tool(...)  # Disabled for future reference
     @with_header_auth(InfrastructureResourcesApi)
     async def post_snapshots(self,
-                             snapshot_ids: Union[List[str], str],
+                             snapshot_ids: list[str] | str,
                              to_time: Optional[int] = None,
                              window_size: Optional[int] = None,
                              detailed: Optional[bool] = False,

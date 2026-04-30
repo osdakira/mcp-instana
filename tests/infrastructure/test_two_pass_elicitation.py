@@ -22,6 +22,7 @@ from src.infrastructure.infrastructure_analyze import InfrastructureAnalyze
 def stub_instana_model_modules():
     module_names = [
         "instana_client.models.cursor_pagination",
+        "instana_client.models.cursor_pagination_with_ui_cursor_infra_explore_cursor",
         "instana_client.models.get_infrastructure_groups_query",
         "instana_client.models.get_infrastructure_query",
         "instana_client.models.infra_metric_configuration",
@@ -46,6 +47,7 @@ def stub_instana_model_modules():
 
     stub_definitions = {
         "instana_client.models.cursor_pagination": ("CursorPagination", type("CursorPagination", (), {"__init__": _simple_init})),
+        "instana_client.models.cursor_pagination_with_ui_cursor_infra_explore_cursor": ("CursorPaginationWithUiCursorInfraExploreCursor", type("CursorPaginationWithUiCursorInfraExploreCursor", (), {"__init__": _simple_init})),
         "instana_client.models.get_infrastructure_groups_query": ("GetInfrastructureGroupsQuery", type("GetInfrastructureGroupsQuery", (), {"__init__": _simple_init, "to_dict": lambda self: self.__dict__})),
         "instana_client.models.get_infrastructure_query": ("GetInfrastructureQuery", type("GetInfrastructureQuery", (), {"__init__": _simple_init, "to_dict": lambda self: self.__dict__})),
         "instana_client.models.infra_metric_configuration": ("InfraMetricConfiguration", type("InfraMetricConfiguration", (), {"__init__": _simple_init})),

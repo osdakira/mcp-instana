@@ -7,6 +7,7 @@ This module provides application analyze tool functionality for Instana monitori
 import json
 import logging
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -223,7 +224,8 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
             if output_dir is None:
-                output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+                # Use tempfile.gettempdir() for secure, cross-platform temporary directory
+                output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", tempfile.gettempdir())
             output_path = f"{output_dir}/instana_trace_details_{id}_{timestamp}.jsonl"
 
             # Fetch trace details
@@ -308,7 +310,6 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             "canLoadMore": can_load_more,
             "totalHits": total_hits
         }
-
         # Add cursor fields if more data available
         if items and can_load_more and "cursor" in items[-1]:
             cursor = items[-1]["cursor"]
@@ -316,8 +317,27 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
                 response["ingestionTime"] = cursor["ingestionTime"]
             if "offset" in cursor:
                 response["offset"] = cursor["offset"]
-
         return response
+
+    def _sanitize_service_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively sanitize trace data to handle None values in Service.technologies field.
+        The Instana API sometimes returns None for technologies, but the SDK model requires a list.
+        """
+        if isinstance(data, dict):
+            # Check if this is a service object with None technologies
+            if "technologies" in data and data["technologies"] is None:
+                data["technologies"] = []
+                logger.debug("Sanitized None technologies field to empty list")
+
+            # Recursively process nested dictionaries
+            for key, value in data.items():
+                if isinstance(value, dict):
+                    data[key] = self._sanitize_service_data(value)
+                elif isinstance(value, list):
+                    data[key] = [self._sanitize_service_data(item) if isinstance(item, dict) else item for item in value]
+
+        return data
 
     @with_header_auth(ApplicationAnalyzeApi)
     async def get_all_traces(
@@ -388,13 +408,20 @@ class ApplicationAnalyzeMCPTools(BaseInstanaClient):
             # Prepare output path
             timestamp = int(datetime.now().timestamp())
             if output_dir is None:
-                output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", "/tmp")
+                # Use tempfile.gettempdir() for secure, cross-platform temporary directory
+                output_dir = os.getenv("INSTANA_API_TEMPORARY_DIR", tempfile.gettempdir())
             output_path = f"{output_dir}/instana_traces_{timestamp}.jsonl"
 
-            # Call API
+            # Call API using _without_preload_content to get raw response
             config = GetTraces.from_dict(request_body)
-            result = api_client.get_traces(get_traces=config)
-            result_dict = result.to_dict() if hasattr(result, 'to_dict') else result
+            result = api_client.get_traces_without_preload_content(get_traces=config)
+
+            # Parse raw JSON response
+            response_text = result.data.decode('utf-8')
+            result_dict = json.loads(response_text)
+
+            # Sanitize the data to handle None values in Service.technologies
+            result_dict = self._sanitize_service_data(result_dict)
 
             # Write items to JSONL file
             items = result_dict.get("items", [])

@@ -7,7 +7,7 @@ Uses the api/custom-dashboard endpoints.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from mcp.types import ToolAnnotations
 
@@ -41,7 +41,7 @@ class CustomDashboardMCPTools(BaseInstanaClient):
     async def execute_dashboard_operation(
         self,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx=None
     ) -> Dict[str, Any]:
         """
@@ -63,6 +63,16 @@ class CustomDashboardMCPTools(BaseInstanaClient):
             Operation result dictionary
         """
         try:
+            # Handle case where FastMCP passes params as a JSON string
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "operation": operation,
+                    }
+
             # Initialize params if not provided
             if params is None:
                 params = {}

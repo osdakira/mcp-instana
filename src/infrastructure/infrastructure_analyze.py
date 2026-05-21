@@ -12,10 +12,11 @@ This tool implements the complete Option 2 flow:
 Key benefit: LLM never sees schema complexity, reducing tokens by 99.4%
 """
 
+import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastmcp import Context
 
@@ -127,12 +128,22 @@ plugin catalog, ensuring compatibility with all monitored technologies without m
         self,
         intent: Optional[str] = None,
         entity: Optional[str] = None,
-        selections: Optional[Dict[str, Any]] = None,
+        selections: Optional[Union[Dict[str, Any], str]] = None,
         ctx: Optional[Context] = None,
         api_client: Any = None
     ) -> List[Any]:
         """Two-pass infrastructure analysis using machine-facing elicitation."""
         try:
+            # Handle case where FastMCP passes selections as a JSON string
+            if isinstance(selections, str):
+                try:
+                    selections = json.loads(selections)
+                except json.JSONDecodeError:
+                    return [TextContent(
+                        type="text",
+                        text=f"Error: Invalid selections format - expected dict or valid JSON string, got: {selections}"
+                    )]
+
             # Route based on input
             if intent is not None and entity is not None:
                 # Pass 1: Intent → Elicitation

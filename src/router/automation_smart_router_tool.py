@@ -4,6 +4,7 @@ Automation Smart Router Tool
 This module provides a unified MCP tool that routes queries to the appropriate
 Automation-specific tools for Instana monitoring.
 """
+import json
 import logging
 from typing import Any, Dict, Optional, Union
 
@@ -185,12 +186,23 @@ Examples:
         self,
         resource_type: str,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx: Optional[Context] = None
     ) -> Dict[str, Any]:
         """Unified Instana automation action manager for catalog and execution history."""
         try:
             logger.info(f"Received: resource_type={resource_type}, operation={operation}")
+
+            # Handle case where FastMCP passes params as a JSON string
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "resource_type": resource_type,
+                        "operation": operation,
+                    }
 
             # Initialize params if not provided
             if params is None:
@@ -206,10 +218,11 @@ Examples:
                 }
 
             # Route to the appropriate resource handler
+            # At this point, params is guaranteed to be Dict[str, Any] due to the JSON parsing above
             if resource_type == RESOURCE_TYPE_CATALOG:
-                return await self._handle_catalog_operation(operation, params, ctx)
+                return await self._handle_catalog_operation(operation, params, ctx)  # type: ignore
             elif resource_type == RESOURCE_TYPE_HISTORY:
-                return await self._handle_history(operation, params, ctx)
+                return await self._handle_history(operation, params, ctx)  # type: ignore
             else:
                 logger.error(f"Unsupported resource_type: {resource_type}")
                 return {

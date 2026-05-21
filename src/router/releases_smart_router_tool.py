@@ -5,8 +5,9 @@ This module provides a unified MCP tool that routes release management queries
 to the appropriate specialized tools.
 """
 
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastmcp import Context
 from mcp.types import ToolAnnotations
@@ -114,12 +115,22 @@ Examples:
     async def manage_releases(
         self,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx: Optional[Context] = None,
     ) -> Dict[str, Any]:
         """Unified releases manager for tracking deployments and analyzing release impact."""
         try:
             logger.debug(f"[manage_releases] Received operation: {operation}")
+
+            # Handle case where FastMCP passes params as a JSON string
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "operation": operation,
+                    }
 
             # Initialize params if not provided
             if params is None:

@@ -5,6 +5,7 @@ This module provides a unified MCP tool that routes queries to the appropriate
 application-specific tools for Instana monitoring.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -205,7 +206,7 @@ Examples:
         self,
         resource_type: str,
         operation: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], str]] = None,
         ctx: Optional[Context] = None
     ) -> Dict[str, Any]:
         """Unified Instana application resource manager for metrics, alerts, configurations, and catalog."""
@@ -215,6 +216,16 @@ Examples:
             # Initialize params if not provided
             if params is None:
                 params = {}
+            # Handle case where FastMCP passes params as a JSON string
+            elif isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError:
+                    return {
+                        "error": f"Invalid params format: expected dict or valid JSON string, got: {params}",
+                        "resource_type": resource_type,
+                        "operation": operation,
+                    }
 
             # Validate resource_type
             if resource_type not in [
@@ -231,18 +242,19 @@ Examples:
                 }
 
             # Route to the appropriate resource handler
+            # At this point, params is guaranteed to be Dict[str, Any] due to the JSON parsing above
             if resource_type == "metrics":
-                return await self._handle_metrics(operation, params, ctx)
+                return await self._handle_metrics(operation, params, ctx)  # type: ignore
             elif resource_type == "alert_config":
-                return await self._handle_alert_config(operation, params, ctx)
+                return await self._handle_alert_config(operation, params, ctx)  # type: ignore
             elif resource_type == "global_alert_config":
-                return await self._handle_global_alert_config(operation, params, ctx)
+                return await self._handle_global_alert_config(operation, params, ctx)  # type: ignore
             elif resource_type == "settings":
-                return await self._handle_settings(operation, params, ctx)
+                return await self._handle_settings(operation, params, ctx)  # type: ignore
             elif resource_type == "catalog":
-                return await self._handle_catalog(operation, params, ctx)
+                return await self._handle_catalog(operation, params, ctx)  # type: ignore
             elif resource_type == "analyze":
-                return await self._handle_analyze(operation, params, ctx)
+                return await self._handle_analyze(operation, params, ctx)  # type: ignore
             else:
                 return {
                     "error": f"Unsupported resource_type: {resource_type}",
